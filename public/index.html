@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>US Retailer Product Knowledge Graph Console</title>
+  
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="Futuristic dark-mode knowledge graph dashboard to analyze US retailer pricing matrices, competitor trees, product substitutes, and brand hierarchies.">
+  <meta name="keywords" content="Knowledge Graph, US Retailer, Product Data, Neo4j, D3.js, Competitor Analysis, Price Intelligence">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- D3.js Engine -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- App Wrapper -->
+  <div class="app-container">
+    
+    <!-- Top Status Bar -->
+    <header class="app-header">
+      <div class="header-logo">
+        <i class="fa-solid fa-circle-nodes logo-icon"></i>
+        <h1>RETAIL<span>GRAPH</span></h1>
+        <span class="badge">V1.0</span>
+      </div>
+      
+      <div class="database-status-group">
+        <div class="db-status-item" id="pg-status">
+          <i class="fa-solid fa-database status-icon"></i>
+          <span>PostgreSQL:</span>
+          <span class="status-indicator offline" id="pg-indicator">CONNECTING</span>
+        </div>
+        <div class="db-status-item" id="neo-status">
+          <i class="fa-solid fa-network-wired status-icon"></i>
+          <span>Neo4j:</span>
+          <span class="status-indicator offline" id="neo-indicator">CONNECTING</span>
+        </div>
+        <button id="sync-db-btn" class="btn btn-secondary btn-sm" title="Sync PostgreSQL view to Neo4j Graph Database">
+          <i class="fa-solid fa-rotate sync-icon"></i> Ingest & Sync
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <main class="app-body">
+      
+      <!-- LEFT SIDEBAR: Browsing & Filters -->
+      <aside class="sidebar left-sidebar">
+        
+        <!-- Tab Selectors -->
+        <div class="sidebar-tabs">
+          <button class="tab-btn active" data-tab="search-tab"><i class="fa-solid fa-magnifying-glass"></i> Search & Filters</button>
+          <button class="tab-btn" data-tab="categories-tab"><i class="fa-solid fa-folder-tree"></i> Categories</button>
+        </div>
+
+        <div class="tab-content active" id="search-tab">
+          <!-- Search Console -->
+          <div class="sidebar-widget">
+            <h3>Quick Node Locator</h3>
+            <div class="search-input-wrapper">
+              <i class="fa-solid fa-magnifying-glass search-inner-icon"></i>
+              <input type="text" id="search-input" placeholder="Search products, brands, sources...">
+              <button id="search-clear-btn" class="clear-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="sidebar-widget">
+            <h3>Entity Type Visibility</h3>
+            <div class="filter-options-grid">
+              <label class="filter-checkbox-label">
+                <input type="checkbox" id="show-product-checkbox" checked>
+                <span class="checkbox-custom checkbox-product"></span>
+                <i class="fa-solid fa-box"></i> Products
+              </label>
+              <label class="filter-checkbox-label">
+                <input type="checkbox" id="show-brand-checkbox" checked>
+                <span class="checkbox-custom checkbox-brand"></span>
+                <i class="fa-solid fa-copyright"></i> Brands
+              </label>
+              <label class="filter-checkbox-label">
+                <input type="checkbox" id="show-catalogsource-checkbox" checked>
+                <span class="checkbox-custom checkbox-catalogsource"></span>
+                <i class="fa-solid fa-file-invoice"></i> Sources
+              </label>
+              <label class="filter-checkbox-label">
+                <input type="checkbox" id="show-category-checkbox" checked>
+                <span class="checkbox-custom checkbox-category"></span>
+                <i class="fa-solid fa-tags"></i> Categories
+              </label>
+            </div>
+          </div>
+
+          <!-- Relationship Visibility -->
+          <div class="sidebar-widget">
+            <h3>Relationship Visibility</h3>
+            <div class="rel-filters-list">
+              <label class="rel-filter-item">
+                <input type="checkbox" id="rel-comp-checkbox" checked>
+                <span class="rel-line-legend comp-legend"></span>
+                <span class="rel-text">Competitor</span>
+              </label>
+              <label class="rel-filter-item">
+                <input type="checkbox" id="rel-sub-checkbox" checked>
+                <span class="rel-line-legend sub-legend"></span>
+                <span class="rel-text">Substitution</span>
+              </label>
+              <label class="rel-filter-item">
+                <input type="checkbox" id="rel-comp-to-checkbox" checked>
+                <span class="rel-line-legend comp-to-legend"></span>
+                <span class="rel-text">Complementary</span>
+              </label>
+              <label class="rel-filter-item">
+                <input type="checkbox" id="rel-sourced-checkbox" checked>
+                <span class="rel-line-legend sourced-legend"></span>
+                <span class="rel-text">Sourced From</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Dynamic Metrics -->
+          <div class="sidebar-widget metrics-widget">
+            <h3>Graph Statistics</h3>
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <div class="metric-num" id="metric-products">0</div>
+                <div class="metric-label">Products</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-num" id="metric-brands">0</div>
+                <div class="metric-label">Brands</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-num" id="metric-sources">0</div>
+                <div class="metric-label">Sources</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-num" id="metric-categories">0</div>
+                <div class="metric-label">Categories</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Categories Tree Tab -->
+        <div class="tab-content" id="categories-tab">
+          <div class="sidebar-widget">
+            <h3>Category Hierarchy Browser</h3>
+            <p class="widget-subtitle">Click a category folder to filter the graph visualization immediately to that domain ecosystem.</p>
+            <div id="category-tree-container" class="category-tree">
+              <!-- Dynamically populated categories tree -->
+              <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading hierarchy...</div>
+            </div>
+            <button id="reset-category-filter" class="btn btn-secondary btn-block btn-sm mt-3 hide">
+              <i class="fa-solid fa-undo"></i> Reset Category Filter
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER: Interactive Visualization Workspace -->
+      <section class="visualization-panel">
+        
+        <!-- Canvas Toolbar -->
+        <div class="canvas-toolbar">
+          <div class="toolbar-left">
+            <span class="current-filter-badge hide" id="active-filter-indicator">
+              Category Filter: <strong id="active-filter-name">None</strong>
+              <i class="fa-solid fa-xmark filter-remove-icon" id="clear-active-filter-badge"></i>
+            </span>
+          </div>
+          <div class="toolbar-right">
+            <button id="zoom-in-btn" class="toolbar-btn" title="Zoom In"><i class="fa-solid fa-plus"></i></button>
+            <button id="zoom-out-btn" class="toolbar-btn" title="Zoom Out"><i class="fa-solid fa-minus"></i></button>
+            <button id="zoom-fit-btn" class="toolbar-btn" title="Fit to Screen"><i class="fa-solid fa-expand"></i></button>
+            <button id="physics-toggle-btn" class="toolbar-btn active" title="Toggle Force Physics"><i class="fa-solid fa-physics"></i><i class="fa-solid fa-bolt"></i></button>
+          </div>
+        </div>
+
+        <!-- D3 Visual Container -->
+        <div class="graph-canvas-container" id="graph-canvas">
+          <!-- SVGs will be injected here -->
+        </div>
+
+        <!-- Cypher IDE Shell Console -->
+        <div class="cypher-ide-drawer" id="cypher-drawer">
+          <div class="drawer-header" id="cypher-drawer-header">
+            <div class="drawer-title">
+              <i class="fa-solid fa-terminal console-icon"></i>
+              <h3>Cypher Graph Query Terminal</h3>
+            </div>
+            <div class="drawer-actions">
+              <select id="cypher-template-select" class="form-select select-sm">
+                <option value="">-- Load Cypher Query Template --</option>
+                <option value="match_all">1. Match and Return All Entities (Limit 300)</option>
+                <option value="match_competitors">2. Find Direct Brand Competitors</option>
+                <option value="match_substitutes">3. Find Product Substitutions (Value Alternatives)</option>
+                <option value="match_complements">4. Match Product Complements & Companion Items</option>
+                <option value="match_walmart_source">5. Products Sourced from Walmart API</option>
+                <option value="electronics_shortest_path">6. Shortest Paths in Category Trees</option>
+              </select>
+              <button id="toggle-drawer-btn" class="drawer-toggle-btn"><i class="fa-solid fa-chevron-up"></i></button>
+            </div>
+          </div>
+          <div class="drawer-body">
+            <div class="cypher-editor-pane">
+              <textarea id="cypher-query-input" placeholder="MATCH (p:Product)-[r:SOURCED_FROM]->(s:CatalogSource) RETURN p, r, s LIMIT 100;" spellcheck="false"></textarea>
+              <div class="editor-action-bar">
+                <span class="editor-info"><i class="fa-solid fa-circle-info"></i> Direct Neo4j Bolt execution session</span>
+                <button id="run-cypher-btn" class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Execute Cypher</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT SIDEBAR: Dynamic Intelligence Inspector -->
+      <aside class="sidebar right-sidebar">
+        
+        <div class="sidebar-tabs">
+          <button class="tab-btn active" data-tab="inspector-tab"><i class="fa-solid fa-circle-info"></i> Object Inspector</button>
+          <button class="tab-btn" data-tab="builder-tab"><i class="fa-solid fa-circle-plus"></i> Graph Builder</button>
+        </div>
+
+        <!-- Object Inspector Panel -->
+        <div class="tab-content active" id="inspector-tab">
+          <div id="inspector-default-message" class="inspector-empty-state">
+            <i class="fa-solid fa-hand-pointer pulse-icon"></i>
+            <h4>Interactive Intelligence Map</h4>
+            <p>Select any node (Product, Brand, Source, Category) in the graph network to display its connected retail metrics, pricing structures, and competitor maps here.</p>
+          </div>
+
+          <!-- Dynamic Inspection Views -->
+          <div id="inspector-content" class="inspector-details hide">
+            <!-- Details Header -->
+            <div class="inspector-header">
+              <span class="node-type-tag" id="node-type-label">Product</span>
+              <h2 id="node-name-label">Apple iPhone 15</h2>
+              <p class="node-subtitle" id="node-subtitle-label">Brand: Apple</p>
+            </div>
+
+            <!-- Scrollable Stats Container -->
+            <div class="inspector-body">
+              
+              <!-- SECTION: Product Catalog Metadata Panel -->
+              <div class="inspector-section" id="inspector-price-section">
+                <h3>Catalog Metadata</h3>
+                <div class="property-grid" id="product-metadata-grid">
+                  <!-- Injected via app.js -->
+                </div>
+              </div>
+
+              <!-- SECTION: Competitors / Substitutes / Complements (Products only) -->
+              <div class="inspector-section" id="inspector-relations-section">
+                <h3>Product Intelligence Map</h3>
+                
+                <div class="rel-intel-group">
+                  <div class="rel-intel-header comp-color">
+                    <i class="fa-solid fa-fire-burner"></i> Rivals & Competitors
+                  </div>
+                  <ul class="rel-intel-list" id="inspector-competitors-list">
+                    <!-- Injected via app.js -->
+                  </ul>
+                </div>
+
+                <div class="rel-intel-group">
+                  <div class="rel-intel-header sub-color">
+                    <i class="fa-solid fa-arrows-spin"></i> Substitution Alternatives
+                  </div>
+                  <ul class="rel-intel-list" id="inspector-substitutes-list">
+                    <!-- Injected via app.js -->
+                  </ul>
+                </div>
+
+                <div class="rel-intel-group">
+                  <div class="rel-intel-header comp-to-color">
+                    <i class="fa-solid fa-puzzle-piece"></i> Complements & Accessories
+                  </div>
+                  <ul class="rel-intel-list" id="inspector-complements-list">
+                    <!-- Injected via app.js -->
+                  </ul>
+                </div>
+              </div>
+
+              <!-- SECTION: General Info (Retailer / Brand / Category) -->
+              <div class="inspector-section" id="inspector-general-section">
+                <h3>Entity Properties</h3>
+                <div class="property-grid" id="node-properties-grid">
+                  <!-- Injected via app.js -->
+                </div>
+              </div>
+
+              <!-- SECTION: Connected Ecosystem (Retailer / Brand / Category) -->
+              <div class="inspector-section" id="inspector-ecosystem-section">
+                <h3>Ecosystem Connections</h3>
+                <ul class="ecosystem-connections-list" id="node-ecosystem-list">
+                  <!-- Injected via app.js -->
+                </ul>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Graph Builder Form Panel -->
+        <div class="tab-content" id="builder-tab">
+          <!-- Form: Add Node -->
+          <div class="sidebar-widget">
+            <h3>Create Graph Entity</h3>
+            <form id="add-node-form" class="builder-form">
+              <div class="form-group">
+                <label for="new-node-type">Entity Type</label>
+                <select id="new-node-type" class="form-control" required>
+                  <option value="Product">Product</option>
+                  <option value="Brand">Brand</option>
+                  <option value="CatalogSource">Catalog Source</option>
+                  <option value="Category">Category</option>
+                </select>
+              </div>
+              
+              <div class="form-group">
+                <label for="new-node-name">Entity Name</label>
+                <input type="text" id="new-node-name" class="form-control" placeholder="e.g. Google Pixel 8, Ibotta" required>
+              </div>
+
+              <div id="dynamic-node-fields">
+                <!-- Additional fields injected based on selection -->
+                <div class="form-group product-field">
+                  <label for="new-product-gtin">GTIN14</label>
+                  <input type="text" id="new-product-gtin" class="form-control" placeholder="e.g. 00039156009025">
+                </div>
+                <div class="form-group product-field">
+                  <label for="new-product-price">MSRP ($)</label>
+                  <input type="number" id="new-product-price" class="form-control" placeholder="e.g. 699" step="0.01">
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-block"><i class="fa-solid fa-plus"></i> Insert Entity</button>
+            </form>
+          </div>
+
+          <!-- Form: Add Relationship -->
+          <div class="sidebar-widget">
+            <h3>Create Relationship Link</h3>
+            <form id="add-relation-form" class="builder-form">
+              <div class="form-group">
+                <label for="rel-source-node">Source Entity</label>
+                <select id="rel-source-node" class="form-control" required>
+                  <option value="">-- Select Source --</option>
+                  <!-- Populated via app.js -->
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="rel-type">Relationship Type</label>
+                <select id="rel-type" class="form-control" required>
+                  <option value="SOURCED_FROM">SOURCED_FROM (Product -> CatalogSource)</option>
+                  <option value="MANUFACTURED_BY">MANUFACTURED_BY (Product -> Brand)</option>
+                  <option value="BELONGS_TO">BELONGS_TO (Product -> Category)</option>
+                  <option value="COMPETES_WITH">COMPETES_WITH (Product -> Product)</option>
+                  <option value="SUBSTITUTE_FOR">SUBSTITUTE_FOR (Product -> Product)</option>
+                  <option value="COMPLEMENTARY_TO">COMPLEMENTARY_TO (Product -> Product)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="rel-target-node">Target Entity</label>
+                <select id="rel-target-node" class="form-control" required>
+                  <option value="">-- Select Target --</option>
+                  <!-- Populated via app.js -->
+                </select>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-block"><i class="fa-solid fa-link"></i> Draw Link</button>
+            </form>
+          </div>
+        </div>
+
+      </aside>
+
+    </main>
+
+  </div>
+
+  <!-- Toast Notification Panel -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Main JavaScript File -->
+  <script src="app.js"></script>
+</body>
+</html>
