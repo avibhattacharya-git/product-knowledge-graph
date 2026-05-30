@@ -590,5 +590,117 @@ export async function handleBrands(c: Context) {
   }
 }
 
+// 11. GET /api/brands/:id/competitors - Fetch direct competitors for any brand
+export async function handleBrandCompetitors(c: Context) {
+  const brandId = c.req.param('id');
+  const session = neoDriver.session();
+  try {
+    const result = await session.run(`
+      MATCH (b:Brand {id: $id})-[:COMPETES_WITH]-(comp:Brand)
+      RETURN comp.id AS id, comp.name AS name
+    `, { id: brandId });
+    const competitors = result.records.map(rec => ({
+      id: rec.get('id'),
+      name: rec.get('name')
+    }));
+    return c.json(competitors);
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  } finally {
+    await session.close();
+  }
+}
+
+// 12. GET /api/categories/:id/related - Fetch both substitute and complementary categories
+export async function handleCategoryRelated(c: Context) {
+  const categoryId = c.req.param('id');
+  const session = neoDriver.session();
+  try {
+    const subResult = await session.run(`
+      MATCH (c:Category {id: $id})-[:SUBSTITUTE_CATEGORY]-(sub:Category)
+      RETURN sub.id AS id, sub.name AS name
+    `, { id: categoryId });
+    const compResult = await session.run(`
+      MATCH (c:Category {id: $id})-[:COMPLEMENTARY_TO]-(comp:Category)
+      RETURN comp.id AS id, comp.name AS name
+    `, { id: categoryId });
+    
+    const substitutes = subResult.records.map(rec => ({ id: rec.get('id'), name: rec.get('name') }));
+    const complements = compResult.records.map(rec => ({ id: rec.get('id'), name: rec.get('name') }));
+    
+    return c.json({ substitutes, complements });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  } finally {
+    await session.close();
+  }
+}
+
+// 13. GET /api/products/:id - Fetch single product detailed properties
+export async function handleProductDetail(c: Context) {
+  const productId = c.req.param('id');
+  const session = neoDriver.session();
+  try {
+    const result = await session.run(`
+      MATCH (p:Product {id: $id})
+      OPTIONAL MATCH (p)-[:MANUFACTURED_BY]->(b:Brand)
+      OPTIONAL MATCH (p)-[:BELONGS_TO]->(cat:Category)
+      OPTIONAL MATCH (p)-[:SOURCED_FROM]->(s:CatalogSource)
+      RETURN p.id AS id, p.name AS name, p.price AS price, p.gtin AS gtin, p.size AS size, p.measure AS measure, p.validationState AS validationState,
+             b.id AS brandId, b.name AS brandName,
+             cat.id AS categoryId, cat.name AS categoryName,
+             s.id AS sourceId, s.name AS sourceName
+    `, { id: productId });
+    
+    if (result.records.length === 0) {
+      return c.json({ error: 'Product not found' }, 404);
+    }
+    
+    const rec = result.records[0];
+    return c.json({
+      id: rec.get('id'),
+      name: rec.get('name'),
+      price: rec.get('price'),
+      gtin: rec.get('gtin'),
+      size: rec.get('size'),
+      measure: rec.get('measure'),
+      validationState: rec.get('validationState'),
+      brand: rec.get('brandId') ? { id: rec.get('brandId'), name: rec.get('brandName') } : null,
+      category: rec.get('categoryId') ? { id: rec.get('categoryId'), name: rec.get('categoryName') } : null,
+      source: rec.get('sourceId') ? { id: rec.get('sourceId'), name: rec.get('sourceName') } : null
+    });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  } finally {
+    await session.close();
+  }
+}
+
+// 14. GET /api/products/:id/path - Fetch hierarchical parent category tree breadcrumbs
+export async function handleProductCategoryPath(c: Context) {
+  const productId = c.req.param('id');
+  const session = neoDriver.session();
+  try {
+    const result = await session.run(`
+      MATCH (p:Product {id: $id})-[:BELONGS_TO]->(c:Category)
+      OPTIONAL MATCH path = (c)-[:PARENT_CATEGORY*0..]->(parent:Category)
+      WITH path ORDER BY length(path) DESC LIMIT 1
+      RETURN [node IN nodes(path) | { id: node.id, name: node.name, level: node.level }] AS steps
+    `, { id: productId });
+    
+    if (result.records.length === 0) {
+      return c.json({ steps: [] });
+    }
+    
+    const steps = result.records[0].get('steps');
+    return c.json({ steps: steps.reverse() });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  } finally {
+    await session.close();
+  }
+}
+
+
 
 

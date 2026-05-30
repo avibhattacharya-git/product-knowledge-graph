@@ -34,10 +34,36 @@ export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<Inge
   const apiKey = process.env.GEMINI_API_KEY;
 
   try {
-    // 1. Clear out Neo4j graph completely
-    console.log('Truncating old Neo4j graph state...');
-    await session.run('MATCH (n) DETACH DELETE n');
-    console.log('Neo4j database truncated.');
+    // 1. Clear out Neo4j graph completely (Failsafe DBA Two-Phase Batch Truncation)
+    console.log('Truncating old Neo4j graph state using failsafe two-phase batch deletion...');
+    const truncateStart = Date.now();
+    let deletedRelsCount = 0;
+    let deletedNodesCount = 0;
+    try {
+      // Phase A: Delete all relationships in chunks of 50k (prevents huge transactional locks on single connected nodes)
+      while (true) {
+        const loopRes = await session.run(`
+          MATCH ()-[r]->() WITH r LIMIT 50000 DELETE r RETURN count(r) as count
+        `);
+        const count = loopRes.records[0].get('count').toNumber();
+        deletedRelsCount += count;
+        if (count === 0) break;
+      }
+      
+      // Phase B: Delete all nodes in chunks of 50k (extremely fast since 0 relationships exist!)
+      while (true) {
+        const loopRes = await session.run(`
+          MATCH (n) WITH n LIMIT 50000 DELETE n RETURN count(n) as count
+        `);
+        const count = loopRes.records[0].get('count').toNumber();
+        deletedNodesCount += count;
+        if (count === 0) break;
+      }
+      console.log(`Neo4j database truncated successfully! Deleted ${deletedRelsCount.toLocaleString()} relationships and ${deletedNodesCount.toLocaleString()} nodes in ${Math.round((Date.now() - truncateStart) / 1000)}s.`);
+    } catch (err: any) {
+      console.error('Failsafe truncation failed, trying emergency fallback DETACH DELETE:', err.message);
+      await session.run('MATCH (n) DETACH DELETE n');
+    }
 
     // 2. Establish Schema Unique Constraints
     console.log('\nCreating schema indexes and constraints...');
@@ -462,36 +488,29 @@ ${JSON.stringify(promptPayload, null, 2)}
     // C. Query pgvector for semantic brand candidates that overlap in category space (Top 4 per brand)
     console.log('Querying pgvector for semantic brand candidates...');
     const candidateQuery = `
-      WITH brand_pairs AS (
-        SELECT DISTINCT ON (b1.id, b2.id)
-          b1.id AS brand1_id,
-          b1.name AS brand1_name,
-          b2.id AS brand2_id,
-          b2.name AS brand2_name,
-          m1.category_id AS shared_category_id,
-          (b1.embedding <=> b2.embedding) AS distance
-        FROM brands_search_mv b1
-        JOIN brands_search_mv b2 ON b1.id <> b2.id
-        JOIN brand_category_map_mv m1 ON m1.brand_id = b1.id
-        JOIN brand_category_map_mv m2 ON m2.brand_id = b2.id AND m2.category_id = m1.category_id
-        WHERE b1.embedding IS NOT NULL AND b2.embedding IS NOT NULL
-      ),
-      ranked_candidates AS (
-        SELECT 
-          brand1_id, brand1_name, brand2_id, brand2_name, shared_category_id, distance,
-          ROW_NUMBER() OVER(PARTITION BY brand1_id ORDER BY distance ASC) as rank
-        FROM brand_pairs
-      )
       SELECT 
-        c.brand1_id, 
-        c.brand1_name, 
-        c.brand2_id, 
-        c.brand2_name, 
-        cat.name AS shared_category_name, 
-        c.distance
-      FROM ranked_candidates c
-      JOIN product_categories_search_mv cat ON cat.id = c.shared_category_id
-      WHERE c.rank <= 4
+        b1.id AS brand1_id,
+        b1.name AS brand1_name,
+        b2.id AS brand2_id,
+        b2.name AS brand2_name,
+        cat.name AS shared_category_name,
+        b2.distance
+      FROM brands_search_mv b1
+      CROSS JOIN LATERAL (
+        SELECT 
+          b2_inner.id,
+          b2_inner.name,
+          m2.category_id,
+          (b1.embedding <=> b2_inner.embedding) AS distance
+        FROM brands_search_mv b2_inner
+        JOIN brand_category_map_mv m1 ON m1.brand_id = b1.id
+        JOIN brand_category_map_mv m2 ON m2.brand_id = b2_inner.id AND m2.category_id = m1.category_id
+        WHERE b2_inner.id <> b1.id AND b2_inner.embedding IS NOT NULL
+        ORDER BY b1.embedding <=> b2_inner.embedding ASC
+        LIMIT 4
+      ) b2
+      JOIN product_categories_search_mv cat ON cat.id = b2.category_id
+      WHERE b1.embedding IS NOT NULL
     `;
     const candidateRes = await pgClient.query(candidateQuery);
     console.log(`Found ${candidateRes.rows.length} vector brand candidate pairs.`);
@@ -892,3 +911,42 @@ ${JSON.stringify(promptPayload, null, 2)}
     await session.close();
   }
 }
+
+if (process.argv[1] && (process.argv[1].endsWith('etl.ts') || process.argv[1].endsWith('etl'))) {
+  console.log('Detected direct script execution. Running standalone ETL pipeline...');
+  const pgPool = new Pool({
+    host: process.env.PG_HOST || 'localhost',
+    port: parseInt(process.env.PG_PORT || '5432'),
+    user: process.env.PG_USER || 'postgres',
+    password: process.env.PG_PASSWORD || 'postgres',
+    database: process.env.PG_DATABASE || 'ProductData',
+    max: 10,
+  });
+
+  const neoDriver = neo4j.driver(
+    process.env.NEO4J_URI || 'bolt://localhost:7687',
+    neo4j.auth.basic(
+      process.env.NEO4J_USER || 'neo4j',
+      process.env.NEO4J_PASSWORD || 'retailpassword123'
+    ),
+    {
+      maxConnectionPoolSize: 50,
+      connectionTimeout: 10000,
+    }
+  );
+
+  runPipeline(pgPool, neoDriver)
+    .then(async (stats) => {
+      console.log('ETL Pipeline succeeded standalone!', stats);
+      await pgPool.end();
+      await neoDriver.close();
+      process.exit(0);
+    })
+    .catch(async (err) => {
+      console.error('ETL Pipeline failed standalone:', err);
+      await pgPool.end();
+      await neoDriver.close();
+      process.exit(1);
+    });
+}
+

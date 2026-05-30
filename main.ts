@@ -16,7 +16,11 @@ import {
   handleNLQQuery,
   handleSearch,
   handleAutocomplete,
-  handleBrands
+  handleBrands,
+  handleBrandCompetitors,
+  handleCategoryRelated,
+  handleProductDetail,
+  handleProductCategoryPath
 } from './handlers';
 
 // Initialize Hono Router
@@ -65,6 +69,10 @@ app.post('/api/nlq', handleNLQQuery);
 app.get('/api/search', handleSearch);
 app.get('/api/autocomplete', handleAutocomplete);
 app.get('/api/brands', handleBrands);
+app.get('/api/brands/:id/competitors', handleBrandCompetitors);
+app.get('/api/categories/:id/related', handleCategoryRelated);
+app.get('/api/products/:id', handleProductDetail);
+app.get('/api/products/:id/path', handleProductCategoryPath);
 
 // Serve static frontend assets from public/ directory using Node serveStatic
 app.use('/*', serveStatic({ root: './public' }));
