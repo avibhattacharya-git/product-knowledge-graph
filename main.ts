@@ -20,7 +20,9 @@ import {
   handleBrandCompetitors,
   handleCategoryRelated,
   handleProductDetail,
-  handleProductCategoryPath
+  handleProductCategoryPath,
+  handleBrandCompetitorsSearch,
+  handleCategoryRelatedSearch
 } from './handlers';
 
 // Initialize Hono Router
@@ -69,6 +71,8 @@ app.post('/api/nlq', handleNLQQuery);
 app.get('/api/search', handleSearch);
 app.get('/api/autocomplete', handleAutocomplete);
 app.get('/api/brands', handleBrands);
+app.get('/api/brands/competitors', handleBrandCompetitorsSearch);
+app.get('/api/categories/related', handleCategoryRelatedSearch);
 app.get('/api/brands/:id/competitors', handleBrandCompetitors);
 app.get('/api/categories/:id/related', handleCategoryRelated);
 app.get('/api/products/:id', handleProductDetail);

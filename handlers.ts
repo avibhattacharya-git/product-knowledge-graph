@@ -701,6 +701,100 @@ export async function handleProductCategoryPath(c: Context) {
   }
 }
 
+// 15. GET /api/brands/competitors?q=coke - Search competitors by brand name
+export async function handleBrandCompetitorsSearch(c: Context) {
+  const q = c.req.query('q');
+  if (!q) return c.json({ error: 'Query parameter q is required' }, 400);
+  
+  const session = neoDriver.session();
+  try {
+    // Find the best matching brand by name, then get its competitors
+    const result = await session.run(`
+      MATCH (b:Brand)
+      WHERE toLower(b.name) CONTAINS toLower($q)
+      WITH b LIMIT 1
+      MATCH (b)-[:COMPETES_WITH]-(comp:Brand)
+      RETURN b.id AS matchedId, b.name AS matchedName, comp.id AS id, comp.name AS name
+    `, { q: q.trim() });
+    
+    if (result.records.length === 0) {
+      // Try to return just the matching brand if it has no competitors
+      const singleBrandRes = await session.run(`
+        MATCH (b:Brand)
+        WHERE toLower(b.name) CONTAINS toLower($q)
+        RETURN b.id AS id, b.name AS name LIMIT 1
+      `, { q: q.trim() });
+      
+      if (singleBrandRes.records.length === 0) {
+        return c.json({ error: 'No matching brand found' }, 404);
+      }
+      const b = singleBrandRes.records[0];
+      return c.json({
+        matchedId: b.get('id'),
+        matchedName: b.get('name'),
+        competitors: []
+      });
+    }
+    
+    const matchedId = result.records[0].get('matchedId');
+    const matchedName = result.records[0].get('matchedName');
+    const competitors = result.records.map(rec => ({
+      id: rec.get('id'),
+      name: rec.get('name')
+    }));
+    
+    return c.json({ matchedId, matchedName, competitors });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  } finally {
+    await session.close();
+  }
+}
+
+// 16. GET /api/categories/related?q=laundry - Search substitutes and complements by category name
+export async function handleCategoryRelatedSearch(c: Context) {
+  const q = c.req.query('q');
+  if (!q) return c.json({ error: 'Query parameter q is required' }, 400);
+  
+  const session = neoDriver.session();
+  try {
+    // Find the best matching category
+    const catRes = await session.run(`
+      MATCH (c:Category)
+      WHERE toLower(c.name) CONTAINS toLower($q)
+      RETURN c.id AS id, c.name AS name LIMIT 1
+    `, { q: q.trim() });
+    
+    if (catRes.records.length === 0) {
+      return c.json({ error: 'No matching category found' }, 404);
+    }
+    
+    const matchedId = catRes.records[0].get('id');
+    const matchedName = catRes.records[0].get('name');
+    
+    // Fetch substitutes and complements for this matched category ID
+    const subResult = await session.run(`
+      MATCH (c:Category {id: $id})-[:SUBSTITUTE_CATEGORY]-(sub:Category)
+      RETURN sub.id AS id, sub.name AS name
+    `, { id: matchedId });
+    
+    const compResult = await session.run(`
+      MATCH (c:Category {id: $id})-[:COMPLEMENTARY_TO]-(comp:Category)
+      RETURN comp.id AS id, comp.name AS name
+    `, { id: matchedId });
+    
+    const substitutes = subResult.records.map(rec => ({ id: rec.get('id'), name: rec.get('name') }));
+    const complements = compResult.records.map(rec => ({ id: rec.get('id'), name: rec.get('name') }));
+    
+    return c.json({ matchedId, matchedName, substitutes, complements });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  } finally {
+    await session.close();
+  }
+}
+
+
 
 
 
