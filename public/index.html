@@ -63,16 +63,29 @@
         <div class="sidebar-tabs">
           <button class="tab-btn active" data-tab="search-tab"><i class="fa-solid fa-magnifying-glass"></i> Search & Filters</button>
           <button class="tab-btn" data-tab="categories-tab"><i class="fa-solid fa-folder-tree"></i> Categories</button>
+          <button class="tab-btn" data-tab="brands-tab"><i class="fa-solid fa-copyright"></i> Brands</button>
         </div>
 
         <div class="tab-content active" id="search-tab">
           <!-- Search Console -->
           <div class="sidebar-widget">
-            <h3>Quick Node Locator</h3>
-            <div class="search-input-wrapper">
-              <i class="fa-solid fa-magnifying-glass search-inner-icon"></i>
-              <input type="text" id="search-input" placeholder="Search products, brands, sources...">
+            <h3>Semantic Search Console</h3>
+            <div class="search-mode-toggle">
+              <button class="mode-toggle-btn active" id="mode-keyword-btn"><i class="fa-solid fa-filter"></i> Keyword</button>
+              <button class="mode-toggle-btn" id="mode-gemini-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> Gemini AI (NLQ)</button>
+            </div>
+            <div class="search-input-wrapper" id="search-input-box">
+              <i class="fa-solid fa-magnifying-glass search-inner-icon" id="search-bar-icon"></i>
+              <input type="text" id="search-input" placeholder="Search products, brands, sources..." autocomplete="off">
               <button id="search-clear-btn" class="clear-btn"><i class="fa-solid fa-xmark"></i></button>
+              
+              <!-- Glassmorphic Autocomplete Suggestions Dropdown -->
+              <div id="autocomplete-dropdown" class="autocomplete-suggestions hide"></div>
+            </div>
+            <div class="gemini-pill-container hide" id="gemini-pills-list">
+              <span class="gemini-pill" data-prompt="Show competitors of Louisiana Fish Fry"><i class="fa-solid fa-sparkles"></i> Rivals</span>
+              <span class="gemini-pill" data-prompt="Find complementary items for Samsung"><i class="fa-solid fa-sparkles"></i> Complements</span>
+              <span class="gemini-pill" data-prompt="Show Best Buy electronics and their sources"><i class="fa-solid fa-sparkles"></i> Best Buy Sources</span>
             </div>
           </div>
 
@@ -161,10 +174,24 @@
             <p class="widget-subtitle">Click a category folder to filter the graph visualization immediately to that domain ecosystem.</p>
             <div id="category-tree-container" class="category-tree">
               <!-- Dynamically populated categories tree -->
-              <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading hierarchy...</div>
+              <div class="loading-spinner"><i class="fa-solid fa-folder-open"></i> Loading hierarchy...</div>
             </div>
             <button id="reset-category-filter" class="btn btn-secondary btn-block btn-sm mt-3 hide">
               <i class="fa-solid fa-undo"></i> Reset Category Filter
+            </button>
+          </div>
+        </div>
+
+        <!-- Brands Portfolio Tab -->
+        <div class="tab-content" id="brands-tab">
+          <div class="sidebar-widget">
+            <h3>Brand Ecosystem Browser</h3>
+            <p class="widget-subtitle">Select a brand to filter the visual canvas directly to its product portfolio.</p>
+            <div id="brands-list-container" class="brands-list">
+              <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading brands list...</div>
+            </div>
+            <button id="reset-brand-filter" class="btn btn-secondary btn-block btn-sm mt-3 hide">
+              <i class="fa-solid fa-undo"></i> Reset Brand Filter
             </button>
           </div>
         </div>
@@ -185,13 +212,31 @@
             <button id="zoom-in-btn" class="toolbar-btn" title="Zoom In"><i class="fa-solid fa-plus"></i></button>
             <button id="zoom-out-btn" class="toolbar-btn" title="Zoom Out"><i class="fa-solid fa-minus"></i></button>
             <button id="zoom-fit-btn" class="toolbar-btn" title="Fit to Screen"><i class="fa-solid fa-expand"></i></button>
-            <button id="physics-toggle-btn" class="toolbar-btn active" title="Toggle Force Physics"><i class="fa-solid fa-physics"></i><i class="fa-solid fa-bolt"></i></button>
+            <button id="physics-toggle-btn" class="toolbar-btn active" title="Toggle Force Physics"><i class="fa-solid fa-bolt"></i></button>
           </div>
         </div>
 
         <!-- D3 Visual Container -->
         <div class="graph-canvas-container" id="graph-canvas">
           <!-- SVGs will be injected here -->
+        </div>
+
+        <!-- Canvas Loading Overlay for Gemini -->
+        <div class="canvas-overlay hide" id="gemini-loading-overlay">
+          <div class="overlay-card">
+            <i class="fa-solid fa-wand-magic-sparkles sparkle-loader"></i>
+            <h3>Gemini AI is analyzing the knowledge graph...</h3>
+            <p>Translating natural language into optimized Cypher queries</p>
+          </div>
+        </div>
+
+        <!-- Floating Cypher Tooltip Badge -->
+        <div class="cypher-tooltip-badge hide" id="cypher-preview-badge">
+          <div class="badge-text">
+            <i class="fa-solid fa-sparkles text-gemini mr-1"></i>
+            <span>Gemini Cypher: <code id="cypher-preview-code">MATCH (n) ...</code></span>
+          </div>
+          <button id="cypher-badge-run-btn" class="btn btn-gemini btn-xs"><i class="fa-solid fa-play"></i> Run in Sandbox</button>
         </div>
 
         <!-- Cypher IDE Shell Console -->

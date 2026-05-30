@@ -10,7 +10,10 @@ const state = {
   filteredLinks: [],
   selectedNode: null,
   activeCategoryFilterId: null,
+  activeBrandFilterId: null, // Track brand filter focus
   activeSearchQuery: '',
+  searchMode: 'keyword', // 'keyword' or 'gemini'
+  geminiCypher: '',
   filters: {
     Product: true,
     Brand: true,
@@ -58,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkDatabasesStatus();
   fetchGraphData();
   fetchCategoryHierarchy();
+  fetchBrandsList();
 });
 
 // Check postgres & neo4j connection status and counts
@@ -203,6 +207,16 @@ function applyGraphFilters() {
         link.target === state.activeCategoryFilterId
       );
       if (!belongs) return false;
+    }
+
+    // Check Brand Explorer focus path
+    if (state.activeBrandFilterId && label === 'Product') {
+      const manufactures = state.allLinks.some(link => 
+        link.source === node.id && 
+        link.type === 'MANUFACTURED_BY' && 
+        link.target === state.activeBrandFilterId
+      );
+      if (!manufactures) return false;
     }
 
     return true;
@@ -373,7 +387,7 @@ function selectNode(node) {
     ecoSec.classList.add('hide');
 
     compileProductMetadata(node);
-    compileProductIntelligence(node);
+    fetchRelatedProductsIntelligence(node);
   } else {
     priceSec.classList.add('hide');
     relSec.classList.add('hide');
@@ -422,66 +436,101 @@ function compileProductMetadata(productNode) {
   });
 }
 
-// Compile Competitors, Substitutes, Accessories
-function compileProductIntelligence(productNode) {
+// Fetch Related Products (Competitors, Complements, Siblings) Dynamically from Neo4j
+async function fetchRelatedProductsIntelligence(productNode) {
   const compList = document.getElementById('inspector-competitors-list');
   const subList = document.getElementById('inspector-substitutes-list');
   const complementList = document.getElementById('inspector-complements-list');
 
-  compList.innerHTML = '';
-  subList.innerHTML = '';
-  complementList.innerHTML = '';
+  compList.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Finding category rivals...</li>`;
+  subList.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Finding packaging alternatives...</li>`;
+  complementList.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Finding companions...</li>`;
 
-  const connectedLinks = state.allLinks.filter(link => 
-    link.source === productNode.id || link.target === productNode.id
-  );
+  try {
+    const res = await fetch(`/api/products/${productNode.id}/related`);
+    const data = await res.json();
 
-  let compCount = 0, subCount = 0, complCount = 0;
+    compList.innerHTML = '';
+    subList.innerHTML = '';
+    complementList.innerHTML = '';
 
-  connectedLinks.forEach(link => {
-    const isSource = link.source === productNode.id;
-    const neighborId = isSource ? link.target : link.source;
-    const neighborNode = state.allNodes.find(n => n.id === neighborId);
-    
-    if (!neighborNode || neighborNode.labels[0] !== 'Product') return;
-
-    const name = neighborNode.properties.name || neighborId;
-
-    if (link.type === 'COMPETES_WITH') {
-      compCount++;
-      const li = document.createElement('li');
-      li.onclick = () => selectNode(neighborNode);
-      li.innerHTML = `
-        <span class="rel-item-name">${name}</span>
-        <span class="rel-item-meta">Rival <i class="fa-solid fa-chevron-right"></i></span>
-      `;
-      compList.appendChild(li);
-    } else if (link.type === 'SUBSTITUTE_FOR') {
-      subCount++;
-      const li = document.createElement('li');
-      li.onclick = () => selectNode(neighborNode);
-      
-      const metaText = isSource ? 'Budget replacement' : 'National brand counterpart';
-      li.innerHTML = `
-        <span class="rel-item-name">${name}</span>
-        <span class="rel-item-meta">${metaText} <i class="fa-solid fa-chevron-right"></i></span>
-      `;
-      subList.appendChild(li);
-    } else if (link.type === 'COMPLEMENTARY_TO') {
-      complCount++;
-      const li = document.createElement('li');
-      li.onclick = () => selectNode(neighborNode);
-      li.innerHTML = `
-        <span class="rel-item-name">${name}</span>
-        <span class="rel-item-meta">Companion <i class="fa-solid fa-chevron-right"></i></span>
-      `;
-      complementList.appendChild(li);
+    // A. Render Category Rivals (Competitors)
+    if (data.competitors && data.competitors.length > 0) {
+      data.competitors.forEach(rival => {
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        li.onclick = () => selectNodeFromId(rival.id);
+        const priceStr = rival.price > 0 ? ` ($${rival.price.toFixed(2)})` : '';
+        li.innerHTML = `
+          <span class="rel-item-name">${rival.name}${priceStr}</span>
+          <span class="rel-item-meta">Rival <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        compList.appendChild(li);
+      });
+    } else {
+      compList.innerHTML = `<li class="text-muted text-center py-2">No competing brands mapped.</li>`;
     }
-  });
 
-  if (compCount === 0) compList.innerHTML = `<li class="text-muted text-center py-2">No direct competitors mapped.</li>`;
-  if (subCount === 0) subList.innerHTML = `<li class="text-muted text-center py-2">No substitutions mapped.</li>`;
-  if (complCount === 0) complementList.innerHTML = `<li class="text-muted text-center py-2">No complementary accessories mapped.</li>`;
+    // B. Render Pack/Flavor Siblings (Mapped as substitutes counterpart!)
+    if (data.siblings && data.siblings.length > 0) {
+      data.siblings.forEach(sib => {
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        li.onclick = () => selectNodeFromId(sib.id);
+        const priceStr = sib.price > 0 ? ` ($${sib.price.toFixed(2)})` : '';
+        li.innerHTML = `
+          <span class="rel-item-name">${sib.name}${priceStr}</span>
+          <span class="rel-item-meta">Size Alternative <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        subList.appendChild(li);
+      });
+    } else {
+      subList.innerHTML = `<li class="text-muted text-center py-2">No product size variations.</li>`;
+    }
+
+    // C. Render Companions (Complements)
+    if (data.complements && data.complements.length > 0) {
+      data.complements.forEach(comp => {
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        li.onclick = () => selectNodeFromId(comp.id);
+        const priceStr = comp.price > 0 ? ` ($${comp.price.toFixed(2)})` : '';
+        li.innerHTML = `
+          <span class="rel-item-name">${comp.name}${priceStr}</span>
+          <span class="rel-item-meta">Companion <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        complementList.appendChild(li);
+      });
+    } else {
+      complementList.innerHTML = `<li class="text-muted text-center py-2">No complementary accessories.</li>`;
+    }
+
+  } catch (err) {
+    console.error('Failed to query related products:', err);
+    compList.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
+    subList.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
+    complementList.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
+  }
+}
+
+// Helper to select and highlight a node by its ID from related lists
+function selectNodeFromId(nodeId) {
+  const targetNode = state.allNodes.find(n => n.id === nodeId);
+  if (targetNode) {
+    // Zoom/Center camera smoothly to this node on D3 canvas
+    const parent = svg.node().parentElement;
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
+    
+    const transform = d3.zoomIdentity
+      .translate(w / 2 - targetNode.x, h / 2 - targetNode.y)
+      .scale(1.2);
+      
+    svg.transition().duration(400).call(zoomBehavior.transform, transform);
+    selectNode(targetNode);
+  } else {
+    showToast('Product is in the database but currently not visible on active visual canvas context.', 'warning');
+  }
 }
 
 // Compile general properties grid
@@ -665,6 +714,53 @@ function toggleCategoryFilter(categoryId, categoryName) {
 
 // 8. Dynamic UI Event Bindings
 function bindUIEvents() {
+  // Sidebar Tab Switching Logic
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = async () => {
+      // Deactivate all tab buttons and content sections
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      
+      // Activate clicked button
+      btn.classList.add('active');
+      
+      // Activate matching content section
+      const tabId = btn.getAttribute('data-tab');
+      const targetContent = document.getElementById(tabId);
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+
+      // 🌟 REFRESH SCREEN: Reset all filters upon tab switching for a fresh interactive canvas context!
+      state.activeCategoryFilterId = null;
+      state.activeBrandFilterId = null;
+      state.activeSearchQuery = '';
+
+      // Reset indicators and controls in the UI
+      const catReset = document.getElementById('reset-category-filter');
+      if (catReset) catReset.classList.add('hide');
+      const brandReset = document.getElementById('reset-brand-filter');
+      if (brandReset) brandReset.classList.add('hide');
+      const activeBadge = document.getElementById('active-filter-indicator');
+      if (activeBadge) activeBadge.classList.add('hide');
+      const clearBtn = document.getElementById('search-clear-btn');
+      if (clearBtn) clearBtn.style.display = 'none';
+      const searchInput = document.getElementById('search-input');
+      if (searchInput) searchInput.value = '';
+      const cypherPreview = document.getElementById('cypher-preview-badge');
+      if (cypherPreview) cypherPreview.classList.add('hide');
+
+      // Clear visual list highlights
+      document.querySelectorAll('.brand-list-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tree-node-header').forEach(el => el.classList.remove('active'));
+
+      // Re-fetch category and brand counts and redraw the default clean graph JIT!
+      fetchCategoryHierarchy();
+      fetchBrandsList();
+      await fetchGraphData();
+    };
+  });
+
   // Database ETL Sync
   document.getElementById('sync-db-btn').onclick = async () => {
     const btn = document.getElementById('sync-db-btn');
@@ -693,25 +789,271 @@ function bindUIEvents() {
     }
   };
 
-  // Search Engine input
+  // Search Engine & Gemini AI NLQ Console Input Binds
   const searchInput = document.getElementById('search-input');
   const clearSearchBtn = document.getElementById('search-clear-btn');
-  
+  const modeKeywordBtn = document.getElementById('mode-keyword-btn');
+  const modeGeminiBtn = document.getElementById('mode-gemini-btn');
+  const searchInputBox = document.getElementById('search-input-box');
+  const searchBarIcon = document.getElementById('search-bar-icon');
+  const geminiPillsList = document.getElementById('gemini-pills-list');
+  const loadingOverlay = document.getElementById('gemini-loading-overlay');
+  const cypherPreviewBadge = document.getElementById('cypher-preview-badge');
+  const cypherPreviewCode = document.getElementById('cypher-preview-code');
+  const cypherBadgeRunBtn = document.getElementById('cypher-badge-run-btn');
+
+  // Toggle to Standard Keyword Filtering Mode
+  modeKeywordBtn.onclick = () => {
+    state.searchMode = 'keyword';
+    modeKeywordBtn.classList.add('active');
+    modeGeminiBtn.classList.remove('active');
+    searchInputBox.classList.remove('gemini-active');
+    geminiPillsList.classList.add('hide');
+    cypherPreviewBadge.classList.add('hide');
+
+    searchBarIcon.className = 'fa-solid fa-magnifying-glass search-inner-icon';
+    searchInput.placeholder = 'Search products, brands, sources...';
+    searchInput.value = state.activeSearchQuery;
+    
+    applyGraphFilters();
+  };
+
+  // Toggle to Advanced Gemini AI Natural Language Querying Mode
+  modeGeminiBtn.onclick = () => {
+    state.searchMode = 'gemini';
+    modeKeywordBtn.classList.remove('active');
+    modeGeminiBtn.classList.add('active');
+    searchInputBox.classList.add('gemini-active');
+    geminiPillsList.classList.remove('hide');
+
+    searchBarIcon.className = 'fa-solid fa-wand-magic-sparkles search-inner-icon';
+    searchInput.placeholder = "Ask Gemini AI: e.g. 'Show Pepsi competitors'...";
+    
+    // Clear standard search filters during AI execution
+    state.activeSearchQuery = '';
+    applyGraphFilters();
+  };
+
+  let autocompleteTimeout = null;
+
+  // Handle live inputs (standard filter on typing, reveal clear buttons, trigger typeahead)
   searchInput.addEventListener('input', (e) => {
-    state.activeSearchQuery = e.target.value;
-    if (state.activeSearchQuery) {
+    if (state.searchMode === 'keyword') {
+      state.activeSearchQuery = e.target.value;
+      applyGraphFilters();
+
+      const q = e.target.value.trim();
+      clearTimeout(autocompleteTimeout);
+      if (q.length >= 2) {
+        autocompleteTimeout = setTimeout(() => {
+          fetchAutocompleteSuggestions(q);
+        }, 200);
+      } else {
+        hideAutocompleteDropdown();
+      }
+    }
+    
+    if (e.target.value) {
       clearSearchBtn.style.display = 'block';
     } else {
       clearSearchBtn.style.display = 'none';
+      if (state.searchMode === 'keyword') {
+        state.activeSearchQuery = '';
+        fetchGraphData();
+      }
     }
-    applyGraphFilters();
   });
 
-  clearSearchBtn.onclick = () => {
+  // Execute Search on pressing Enter
+  searchInput.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      const queryVal = searchInput.value.trim();
+      hideAutocompleteDropdown();
+      
+      if (state.searchMode === 'gemini') {
+        if (!queryVal) return showToast('Please enter a natural language question.', 'warning');
+        await triggerGeminiAISearch(queryVal);
+      } else {
+        if (!queryVal) {
+          await fetchGraphData();
+          return;
+        }
+        await triggerGlobalKeywordSearch(queryVal);
+      }
+    }
+  });
+
+  // Hide autocomplete when clicking outside
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('autocomplete-dropdown');
+    if (dropdown && e.target !== searchInput && e.target !== dropdown && !dropdown.contains(e.target)) {
+      hideAutocompleteDropdown();
+    }
+  });
+
+  function hideAutocompleteDropdown() {
+    const dropdown = document.getElementById('autocomplete-dropdown');
+    if (dropdown) {
+      dropdown.classList.add('hide');
+      dropdown.innerHTML = '';
+    }
+  }
+
+  async function fetchAutocompleteSuggestions(queryVal) {
+    const dropdown = document.getElementById('autocomplete-dropdown');
+    if (!dropdown) return;
+
+    try {
+      const res = await fetch(`/api/autocomplete?q=${encodeURIComponent(queryVal)}`);
+      const suggestions = await res.json();
+
+      if (!res.ok || !Array.isArray(suggestions) || suggestions.length === 0) {
+        hideAutocompleteDropdown();
+        return;
+      }
+
+      dropdown.innerHTML = '';
+      suggestions.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'suggestion-item';
+        
+        // Highlight matching text case-insensitively
+        const escaped = queryVal.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp(`(${escaped})`, 'gi');
+        const highlightedName = item.name.replace(regex, `<strong style="color:var(--accent); text-shadow: 0 0 8px rgba(6, 182, 212, 0.4);">$1</strong>`);
+        
+        div.innerHTML = `
+          <span><i class="fa-solid fa-magnifying-glass text-muted mr-2" style="font-size:10px; opacity:0.6;"></i> ${highlightedName}</span>
+          <span class="item-type ${item.type}">${item.type}</span>
+        `;
+        
+        div.onclick = async (e) => {
+          e.stopPropagation();
+          searchInput.value = item.name;
+          clearSearchBtn.style.display = 'block';
+          hideAutocompleteDropdown();
+          await triggerGlobalKeywordSearch(item.name);
+        };
+        
+        dropdown.appendChild(div);
+      });
+      
+      dropdown.classList.remove('hide');
+    } catch (err) {
+      console.warn('Autocomplete fetch failed:', err);
+    }
+  }
+
+  // Core Gemini AI Search Traversal Caller
+  async function triggerGeminiAISearch(questionText) {
+    loadingOverlay.classList.remove('hide');
+    showToast('Gemini is translating prompt to Cypher...', 'warning');
+
+    try {
+      const res = await fetch('/api/nlq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: questionText })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        showToast(`Gemini successfully mapped ${data.nodes.length} nodes!`, 'success');
+        
+        // Load the new sub-graph into visual memory
+        state.allNodes = data.nodes;
+        state.allLinks = data.links;
+        applyGraphFilters();
+
+        // Reveal the floating Cypher preview badge
+        if (data.translatedCypher) {
+          state.geminiCypher = data.translatedCypher;
+          cypherPreviewCode.textContent = data.translatedCypher;
+          cypherPreviewBadge.classList.remove('hide');
+        } else {
+          cypherPreviewBadge.classList.add('hide');
+        }
+      } else {
+        showToast(`Gemini execution failed: ${data.error}`, 'error');
+        cypherPreviewBadge.classList.add('hide');
+      }
+    } catch (err) {
+      showToast('Network timeout connecting to Gemini AI service.', 'error');
+      cypherPreviewBadge.classList.add('hide');
+    } finally {
+      loadingOverlay.classList.add('hide');
+    }
+  }
+
+  // Core Global Keyword Search Caller
+  async function triggerGlobalKeywordSearch(keywordText) {
+    loadingOverlay.classList.remove('hide');
+    showToast(`Searching database globally for "${keywordText}"...`, 'warning');
+
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(keywordText)}`);
+      const data = await res.json();
+
+      if (res.ok) {
+        showToast(`Found ${data.nodes.length} matching nodes globally!`, 'success');
+        state.allNodes = data.nodes;
+        state.allLinks = data.links;
+        state.activeSearchQuery = keywordText;
+        applyGraphFilters();
+      } else {
+        showToast(`Search failed: ${data.error}`, 'error');
+      }
+    } catch (err) {
+      showToast('Network timeout connecting to search service.', 'error');
+    } finally {
+      loadingOverlay.classList.add('hide');
+    }
+  }
+
+  // Bind Suggested Prompt Pill Badges
+  document.querySelectorAll('.gemini-pill').forEach(pill => {
+    pill.onclick = async (e) => {
+      const promptText = pill.getAttribute('data-prompt');
+      searchInput.value = promptText;
+      clearSearchBtn.style.display = 'block';
+      
+      // Force trigger Gemini AI Search mode
+      modeGeminiBtn.onclick();
+      await triggerGeminiAISearch(promptText);
+    };
+  });
+
+  // Bind Cypher Tooltip Badge Runner
+  cypherBadgeRunBtn.onclick = () => {
+    if (!state.geminiCypher) return;
+    
+    // Copy to Sandbox editor
+    const editor = document.getElementById('cypher-query-input');
+    editor.value = state.geminiCypher;
+
+    // Expand Cypher terminal drawer if closed
+    const drawer = document.getElementById('cypher-drawer');
+    const toggleIcon = document.getElementById('toggle-drawer-btn').querySelector('i');
+    
+    if (!state.isDrawerExpanded) {
+      state.isDrawerExpanded = true;
+      drawer.classList.add('expanded');
+      toggleIcon.className = 'fa-solid fa-chevron-down';
+    }
+
+    // Trigger execute
+    document.getElementById('run-cypher-btn').click();
+  };
+
+  clearSearchBtn.onclick = async () => {
     searchInput.value = '';
-    state.activeSearchQuery = '';
     clearSearchBtn.style.display = 'none';
-    applyGraphFilters();
+    cypherPreviewBadge.classList.add('hide');
+
+    if (state.searchMode === 'keyword') {
+      state.activeSearchQuery = '';
+      await fetchGraphData();
+    }
   };
 
   // Visibility Checkboxes
@@ -733,9 +1075,13 @@ function bindUIEvents() {
     });
   });
 
-  // Category reset badge clicking
-  document.getElementById('clear-active-filter-badge').onclick = () => toggleCategoryFilter(state.activeCategoryFilterId, '');
+  // Category and Brand reset badge clicking
+  document.getElementById('clear-active-filter-badge').onclick = () => {
+    if (state.activeCategoryFilterId) toggleCategoryFilter(state.activeCategoryFilterId, '');
+    if (state.activeBrandFilterId) toggleBrandFilter(state.activeBrandFilterId, '');
+  };
   document.getElementById('reset-category-filter').onclick = () => toggleCategoryFilter(state.activeCategoryFilterId, '');
+  document.getElementById('reset-brand-filter').onclick = () => toggleBrandFilter(state.activeBrandFilterId, '');
 
   // Toolbar Actions
   document.getElementById('zoom-in-btn').onclick = () => svg.transition().duration(250).call(zoomBehavior.scaleBy, 1.25);
@@ -979,3 +1325,76 @@ function showToast(message, type = 'info') {
     setTimeout(() => toast.remove(), 350);
   }, 4000);
 }
+
+// 10. Fetch and render searchable top brands list
+async function fetchBrandsList() {
+  try {
+    const res = await fetch('/api/brands');
+    const brands = await res.json();
+    
+    renderBrandsList(brands);
+  } catch (err) {
+    console.error('Failed to load brands list', err);
+  }
+}
+
+function renderBrandsList(brands) {
+  const container = document.getElementById('brands-list-container');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (brands.length === 0) {
+    container.innerHTML = `<div class="text-muted text-center py-2">No active brands found.</div>`;
+    return;
+  }
+
+  brands.forEach(b => {
+    const div = document.createElement('div');
+    div.className = 'brand-list-item';
+    if (state.activeBrandFilterId === b.id) {
+      div.classList.add('active');
+    }
+    
+    div.onclick = (e) => {
+      e.stopPropagation();
+      toggleBrandFilter(b.id, b.name);
+    };
+
+    div.innerHTML = `
+      <span><i class="fa-solid fa-copyright text-accent mr-2"></i> ${b.name}</span>
+      <span class="brand-item-meta">${b.productCount} Items</span>
+    `;
+
+    container.appendChild(div);
+  });
+}
+
+function toggleBrandFilter(brandId, brandName) {
+  const activeBadge = document.getElementById('active-filter-indicator');
+  const activeName = document.getElementById('active-filter-name');
+  const resetBtn = document.getElementById('reset-brand-filter');
+
+  if (state.activeBrandFilterId === brandId) {
+    state.activeBrandFilterId = null;
+    activeBadge.classList.add('hide');
+    resetBtn.classList.add('hide');
+  } else {
+    // Clear category filter when activating brand filter to avoid conflicting filters
+    state.activeCategoryFilterId = null;
+    const catReset = document.getElementById('reset-category-filter');
+    if (catReset) catReset.classList.add('hide');
+    
+    state.activeBrandFilterId = brandId;
+    activeName.textContent = `Brand: ${brandName}`;
+    activeBadge.classList.remove('hide');
+    resetBtn.classList.remove('hide');
+  }
+
+  document.querySelectorAll('.brand-list-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tree-node-header').forEach(el => el.classList.remove('active'));
+  
+  applyGraphFilters();
+  fetchBrandsList();
+  fetchCategoryHierarchy();
+}
+

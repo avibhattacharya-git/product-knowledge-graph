@@ -1,0 +1,26 @@
+{
+  "name": "knowledgegraph",
+  "version": "1.0.0",
+  "description": "US Retailer Product Knowledge Graph using Node, Hono, pgx-stream, and Neo4j",
+  "main": "main.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx main.ts",
+    "ingest": "tsx etl.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.11.1",
+    "dotenv": "^16.4.5",
+    "hono": "^4.3.7",
+    "neo4j-driver": "^5.20.1",
+    "pg": "^8.11.5",
+    "pg-query-stream": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/pg": "^8.11.6",
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.5"
+  }
+}

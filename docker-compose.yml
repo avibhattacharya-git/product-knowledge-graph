@@ -10,9 +10,41 @@ services:
     environment:
       - NEO4J_AUTH=neo4j/retailpassword123
       - NEO4J_PLUGINS=["apoc"] # Optional: Enable APOC plugins for advanced graph features
+      - NEO4J_server_memory_heap_initial__size=4G
+      - NEO4J_server_memory_heap_max__size=8G
+      - NEO4J_server_memory_pagecache_size=4G
     volumes:
       - ./neo4j/data:/data
       - ./neo4j/logs:/logs
       - ./neo4j/import:/var/lib/neo4j/import
       - ./neo4j/plugins:/plugins
     restart: always
+
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: product-data-postgres
+    ports:
+      - "5445:5432" # Exposed on port 5445 to resolve host port conflicts
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ProductData
+      - PGDATA=/var/lib/postgresql/18/docker
+    command: >
+      postgres
+      -c maintenance_work_mem=10GB
+      -c shared_buffers=2GB
+      -c work_mem=64MB
+      -c max_parallel_maintenance_workers=4
+      -c max_wal_size=4GB
+      -c checkpoint_timeout=30min
+      -c synchronous_commit=off
+    volumes:
+      - db_data:/var/lib/postgresql
+      - ./datadump:/dumps
+    restart: always
+
+volumes:
+  db_data:
+    name: "16df1500091bb2f56b8f931330be2211d21f4960baf0ef8f772abdaf0e98ea4b"
+    external: true
