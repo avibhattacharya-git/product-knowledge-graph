@@ -380,6 +380,10 @@ function selectNode(node) {
   const genSec = document.getElementById('inspector-general-section');
   const ecoSec = document.getElementById('inspector-ecosystem-section');
 
+  // Reset custom sub-sections visibility
+  document.getElementById('brand-competitors-section').classList.add('hide');
+  document.getElementById('category-relations-section').classList.add('hide');
+
   if (label === 'Product') {
     priceSec.classList.remove('hide');
     relSec.classList.remove('hide');
@@ -396,6 +400,12 @@ function selectNode(node) {
 
     compileGeneralProperties(node);
     compileEcosystemConnections(node);
+
+    if (label === 'Brand') {
+      fetchBrandCompetitorsIntelligence(node);
+    } else if (label === 'Category') {
+      fetchCategoryRelationsIntelligence(node);
+    }
   }
 }
 
@@ -1397,4 +1407,92 @@ function toggleBrandFilter(brandId, brandName) {
   fetchBrandsList();
   fetchCategoryHierarchy();
 }
+
+// Fetch Brand Competitors Dynamically
+async function fetchBrandCompetitorsIntelligence(brandNode) {
+  const list = document.getElementById('brand-competitors-list');
+  const container = document.getElementById('brand-competitors-section');
+  
+  list.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Finding brand rivals...</li>`;
+  container.classList.remove('hide');
+
+  try {
+    const res = await fetch(`/api/brands/${brandNode.id}/competitors`);
+    const data = await res.json();
+    list.innerHTML = '';
+    
+    if (Array.isArray(data) && data.length > 0) {
+      data.forEach(rival => {
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        li.onclick = () => selectNodeFromId(rival.id);
+        li.innerHTML = `
+          <span class="rel-item-name">${rival.name}</span>
+          <span class="rel-item-meta">Rival Brand <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        list.appendChild(li);
+      });
+    } else {
+      list.innerHTML = `<li class="text-muted text-center py-2">No competing brands mapped.</li>`;
+    }
+  } catch (err) {
+    console.error('Failed to fetch brand competitors:', err);
+    list.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
+  }
+}
+
+// Fetch Category Relations Dynamically
+async function fetchCategoryRelationsIntelligence(categoryNode) {
+  const subList = document.getElementById('category-substitutes-list');
+  const compList = document.getElementById('category-complements-list');
+  const container = document.getElementById('category-relations-section');
+  
+  subList.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Finding substitutes...</li>`;
+  compList.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Finding complements...</li>`;
+  container.classList.remove('hide');
+
+  try {
+    const res = await fetch(`/api/categories/${categoryNode.id}/related`);
+    const data = await res.json();
+    subList.innerHTML = '';
+    compList.innerHTML = '';
+
+    // Substitutes
+    if (data.substitutes && data.substitutes.length > 0) {
+      data.substitutes.forEach(sub => {
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        li.onclick = () => selectNodeFromId(sub.id);
+        li.innerHTML = `
+          <span class="rel-item-name">${sub.name}</span>
+          <span class="rel-item-meta">Alternative <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        subList.appendChild(li);
+      });
+    } else {
+      subList.innerHTML = `<li class="text-muted text-center py-2">No substitute categories mapped.</li>`;
+    }
+
+    // Complements
+    if (data.complements && data.complements.length > 0) {
+      data.complements.forEach(comp => {
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        li.onclick = () => selectNodeFromId(comp.id);
+        li.innerHTML = `
+          <span class="rel-item-name">${comp.name}</span>
+          <span class="rel-item-meta">Companion <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        compList.appendChild(li);
+      });
+    } else {
+      compList.innerHTML = `<li class="text-muted text-center py-2">No companion categories mapped.</li>`;
+    }
+  } catch (err) {
+    console.error('Failed to fetch category relations:', err);
+    subList.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
+    compList.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
+  }
+}
+
 
