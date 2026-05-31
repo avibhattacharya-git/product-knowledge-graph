@@ -453,8 +453,9 @@ async function fetchRelatedProductsIntelligence(productNode) {
         li.className = 'hover-item';
         li.onclick = () => selectNodeFromId(rival.id);
         const priceStr = rival.price > 0 ? ` ($${rival.price.toFixed(2)})` : '';
+        const badgeHtml = rival.matchScore ? `<span class="match-badge"><i class="fa-solid fa-sparkles" style="font-size: 8px; margin-right: 2px;"></i> ${rival.matchScore}% Match</span>` : '';
         li.innerHTML = `
-          <span class="rel-item-name">${rival.name}${priceStr}</span>
+          <span class="rel-item-name">${rival.name}${priceStr}${badgeHtml}</span>
           <span class="rel-item-meta">Rival <i class="fa-solid fa-chevron-right"></i></span>
         `;
         compList.appendChild(li);

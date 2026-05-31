@@ -244,13 +244,18 @@ export async function handleRelatedProducts(c: Context) {
       OPTIONAL MATCH (c1)-[:SUBSTITUTE_CATEGORY]-(c2:Category)
       WITH p1, c1, collect(DISTINCT c2) + c1 AS allowedRivalCategories
       
-      OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b1:Brand)-[:COMPETES_WITH]-(b2:Brand)
-      WITH p1, allowedRivalCategories, collect(DISTINCT b2) AS allowedBrands
+      OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b1:Brand)-[compEdge:COMPETES_WITH]-(b2:Brand)
+      WITH p1, allowedRivalCategories, collect(DISTINCT b2) AS allowedBrands, collect({ id: b2.id, similarity: compEdge.similarity }) AS brandSimilarities
       
-      OPTIONAL MATCH (rival:Product)-[:BELONGS_TO]->(rc:Category)
-      OPTIONAL MATCH (rival)-[:MANUFACTURED_BY]->(rivalBrand:Brand)
-      WHERE rc IN allowedRivalCategories AND rivalBrand IN allowedBrands AND rival <> p1
-      WITH p1, collect(DISTINCT rival)[..15] AS competitors
+      // Match rivals starting from allowed competing brands (which is very small!)
+      UNWIND allowedBrands AS rivalBrand
+      OPTIONAL MATCH (rival:Product)-[:MANUFACTURED_BY]->(rivalBrand)
+      OPTIONAL MATCH (rival)-[:BELONGS_TO]->(rc:Category)
+      WHERE rc IN allowedRivalCategories AND rival <> p1
+      
+      // Find the similarity for this rival's brand
+      WITH p1, rival, [item IN brandSimilarities WHERE item.id = rivalBrand.id][0] AS compInfo
+      WITH p1, collect({ node: rival, similarity: compInfo.similarity })[..15] AS competitors
       
       // B. Companion Accessories (Same Brand, Complementary Categories via Parent Departments)
       OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b:Brand)
@@ -258,17 +263,17 @@ export async function handleRelatedProducts(c: Context) {
       OPTIONAL MATCH (c2:Category)-[:PARENT_CATEGORY*0..2]->(dept2)
       WITH competitors, p1, b, collect(DISTINCT c2) AS allowedComplementCategories
       
-      OPTIONAL MATCH (comp:Product)-[:BELONGS_TO]->(cComp:Category)
-      OPTIONAL MATCH (comp)-[:MANUFACTURED_BY]->(compBrand:Brand)
-      WHERE cComp IN allowedComplementCategories AND compBrand = b AND comp <> p1
+      // Traversal starting from the brand "b" (which is just 1 node!) to find accessories
+      OPTIONAL MATCH (comp:Product)-[:MANUFACTURED_BY]->(b)
+      OPTIONAL MATCH (comp)-[:BELONGS_TO]->(cComp:Category)
+      WHERE cComp IN allowedComplementCategories AND comp <> p1
       WITH competitors, collect(DISTINCT comp)[..15] AS complements, p1
       
       // C. Packaging/Flavor Siblings (Same Brand, Same Category)
       OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b:Brand)
       OPTIONAL MATCH (p1)-[:BELONGS_TO]->(c:Category)
       OPTIONAL MATCH (sib:Product)-[:BELONGS_TO]->(c)
-      OPTIONAL MATCH (sib)-[:MANUFACTURED_BY]->(sibBrand:Brand)
-      WHERE sibBrand = b AND sib <> p1
+      WHERE (sib)-[:MANUFACTURED_BY]->(b) AND sib <> p1
       WITH competitors, complements, collect(DISTINCT sib)[..15] AS siblings
       
       RETURN competitors, complements, siblings
@@ -294,8 +299,19 @@ export async function handleRelatedProducts(c: Context) {
       measure: n.properties.measure || ''
     });
 
+    const processedCompetitors = rawCompetitors.map((item: any) => {
+      const n = item.node;
+      const similarityVal = item.similarity != null ? parseFloat(item.similarity) : 0.90;
+      // Convert to clean percentage scale (e.g. 0.9254 -> 92.5) and bound between 50% and 100%
+      const matchScore = Math.min(100, Math.max(50, Math.round(similarityVal * 1000) / 10));
+      return {
+        ...mapNode(n),
+        matchScore
+      };
+    });
+
     return c.json({
-      competitors: rawCompetitors.map(mapNode),
+      competitors: processedCompetitors,
       complements: rawComplements.map(mapNode),
       siblings: rawSiblings.map(mapNode)
     });

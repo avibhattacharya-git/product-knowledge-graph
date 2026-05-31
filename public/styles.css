@@ -1581,3 +1581,30 @@ body {
 .suggestion-item .item-type.Category { background: rgba(217, 70, 239, 0.15); color: hsl(290, 85%, 60%); }
 .suggestion-item .item-type.CatalogSource { background: rgba(234, 179, 8, 0.15); color: var(--warning); }
 
+/* Glassmorphic Match Percentage Badge */
+.match-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(34, 197, 94, 0.12); /* Semi-transparent green HSL */
+  color: #22c55e;                      /* Bright clean green HSL */
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  padding: 2px 7px;
+  border-radius: 9999px;               /* Circular pill shape */
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  font-family: var(--font-body);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.08);
+  backdrop-filter: blur(4px);
+  margin-left: 8px;
+  vertical-align: middle;
+  transition: transform 0.2s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.2s ease;
+}
+
+.match-badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.25);
+}
+
+

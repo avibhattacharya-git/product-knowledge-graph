@@ -516,7 +516,7 @@ ${JSON.stringify(promptPayload, null, 2)}
 
     // D. Filter candidates against cache
     const uncachedCandidates: any[] = [];
-    const competitorsToLoad: { b1: string, b2: string }[] = [];
+    const competitorsToLoad: { b1: string, b2: string, similarity?: number }[] = [];
 
     candidateRes.rows.forEach(row => {
       const b1 = String(row.brand1_id).trim();
@@ -525,7 +525,7 @@ ${JSON.stringify(promptPayload, null, 2)}
 
       if (cacheMap.has(key)) {
         if (cacheMap.get(key) === true) {
-          competitorsToLoad.push({ b1, b2 });
+          competitorsToLoad.push({ b1, b2, similarity: 1 - parseFloat(row.distance || '0.10') });
         }
       } else {
         uncachedCandidates.push({
@@ -552,7 +552,7 @@ ${JSON.stringify(promptPayload, null, 2)}
              VALUES ($1, $2, $3) ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
             [pair.brand1_id, pair.brand2_id, true]
           ));
-          competitorsToLoad.push({ b1: pair.brand1_id, b2: pair.brand2_id });
+          competitorsToLoad.push({ b1: pair.brand1_id, b2: pair.brand2_id, similarity: 0.90 });
         }
         await Promise.all(insertQueries);
       } else {
@@ -644,7 +644,7 @@ ${JSON.stringify(promptPayload, null, 2)}
                 ));
 
                 if (competes) {
-                  competitorsToLoad.push({ b1: item.brand1_id, b2: item.brand2_id });
+                  competitorsToLoad.push({ b1: item.brand1_id, b2: item.brand2_id, similarity: 0.90 });
                 }
               });
 
@@ -660,7 +660,7 @@ ${JSON.stringify(promptPayload, null, 2)}
                  VALUES ($1, $2, $3) ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
                 [item.brand1_id, item.brand2_id, true]
               ));
-              competitorsToLoad.push({ b1: item.brand1_id, b2: item.brand2_id });
+              competitorsToLoad.push({ b1: item.brand1_id, b2: item.brand2_id, similarity: 0.90 });
             });
             await Promise.all(cacheQueries);
           }
@@ -703,8 +703,10 @@ ${JSON.stringify(promptPayload, null, 2)}
         UNWIND $links AS link
         MATCH (b1:Brand {id: link.b1})
         MATCH (b2:Brand {id: link.b2})
-        MERGE (b1)-[:COMPETES_WITH]->(b2)
-        MERGE (b2)-[:COMPETES_WITH]->(b1)
+        MERGE (b1)-[r1:COMPETES_WITH]->(b2)
+        SET r1.similarity = COALESCE(link.similarity, 0.90)
+        MERGE (b2)-[r2:COMPETES_WITH]->(b1)
+        SET r2.similarity = COALESCE(link.similarity, 0.90)
       `, { links: chunk });
     }
     console.log(`Mapped ${competitorsToLoad.length * 2} COMPETES_WITH brand-level edges.`);
