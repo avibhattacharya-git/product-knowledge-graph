@@ -7,7 +7,9 @@
     "forceConsistentCasingInFileNames": true,
     "strict": false,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": ["bun-types"]
   },
-  "include": ["main.ts", "handlers.ts", "etl.ts"]
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "utility-scripts/scratch/**/*"]
 }
