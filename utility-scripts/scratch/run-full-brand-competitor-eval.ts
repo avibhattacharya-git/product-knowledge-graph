@@ -156,7 +156,7 @@ async function runFullBrandCompetitorEval() {
         };
 
         const batchSize = 100;
-        const processBatch = async (batch: any[]) => {
+        const processBatch = async (batch: any[]): Promise<boolean> => {
           const promptPayload = batch.map((item, idx) => ({
             id: `pair_${idx}`,
             brandA: item.brand1_name,
@@ -213,40 +213,51 @@ ${JSON.stringify(promptPayload, null, 2)}
                  ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
                 values
               );
+              return true;
             } else {
               throw new Error('Malformed API response: no candidates returned');
             }
           } catch (err: any) {
             console.error(`[LLM Judge] Failed to process batch of size ${batch.length}: ${err.message}. Skipping database insert for this batch.`);
-            // No fallback insert! We do not write anything to PostgreSQL for this batch, so they remain uncached.
+            return false;
           }
         };
 
         const totalBatches = Math.ceil(uniqueUncached.length / batchSize);
         const concurrencyLimit = 12;
-        console.log(`Divided into ${totalBatches} batches of size ${batchSize}. Executing with concurrency limit ${concurrencyLimit} to ensure speed and rate safety...`);
 
-        let batchIndex = 0;
+        // Populate our robust in-memory work queue
+        const pendingQueue: any[][] = [];
+        for (let i = 0; i < totalBatches; i++) {
+          const start = i * batchSize;
+          pendingQueue.push(uniqueUncached.slice(start, start + batchSize));
+        }
+
+        console.log(`Divided into ${totalBatches} batches of size ${batchSize}. Executing with concurrency limit ${concurrencyLimit} and self-healing queue retry...`);
+
         let completedCount = 0;
 
         const runWorker = async (): Promise<void> => {
-          while (batchIndex < totalBatches) {
-            const currentIdx = batchIndex++;
-            if (currentIdx >= totalBatches) break;
-            
-            const start = currentIdx * batchSize;
-            const chunk = uniqueUncached.slice(start, start + batchSize);
-            
-            try {
-              await processBatch(chunk);
+          while (true) {
+            // Pull the next batch from the queue
+            const chunk = pendingQueue.shift();
+            if (!chunk) break; // Queue is fully empty, worker can gracefully exit
+
+            const success = await processBatch(chunk);
+            if (success) {
               completedCount++;
               console.log(`  [PROGRESS] Evaluated batch ${completedCount}/${totalBatches} (${Math.round((completedCount/totalBatches)*100)}% complete)...`);
-            } catch (err: any) {
-              console.error(`Error in batch ${currentIdx + 1}:`, err.message);
+              
+              // Add a tiny rate limit spacing of 1.5 seconds before starting next request
+              await new Promise(r => setTimeout(r, 1500));
+            } else {
+              // If it failed, RE-QUEUE IT to the back of the queue!
+              console.warn(`[Queue Monitor] Re-queueing failed batch to the back of the queue. Remaining queue size: ${pendingQueue.length + 1}...`);
+              pendingQueue.push(chunk);
+              
+              // Sleep for 30 seconds to let transient network / rate-limiting clear up
+              await new Promise(r => setTimeout(r, 30000));
             }
-            
-            // Add a tiny rate limit spacing of 1.5 seconds before starting next request
-            await new Promise(r => setTimeout(r, 1500));
           }
         };
 
