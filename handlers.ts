@@ -244,24 +244,31 @@ export async function handleRelatedProducts(c: Context) {
       OPTIONAL MATCH (c1)-[:SUBSTITUTE_CATEGORY]-(c2:Category)
       WITH p1, c1, collect(DISTINCT c2) + c1 AS allowedRivalCategories
       
-      OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b1:Brand)-[:COMPETES_WITH]-(b2:Brand)<-[:MANUFACTURED_BY]-(rival:Product)
-      MATCH (rival)-[:BELONGS_TO]->(rc:Category)
-      WHERE rc IN allowedRivalCategories AND rival <> p1
+      OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b1:Brand)-[:COMPETES_WITH]-(b2:Brand)
+      WITH p1, allowedRivalCategories, collect(DISTINCT b2) AS allowedBrands
+      
+      OPTIONAL MATCH (rival:Product)-[:BELONGS_TO]->(rc:Category)
+      OPTIONAL MATCH (rival)-[:MANUFACTURED_BY]->(rivalBrand:Brand)
+      WHERE rc IN allowedRivalCategories AND rivalBrand IN allowedBrands AND rival <> p1
       WITH p1, collect(DISTINCT rival)[..15] AS competitors
       
       // B. Companion Accessories (Same Brand, Complementary Categories via Parent Departments)
-      OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b:Brand)<-[:MANUFACTURED_BY]-(comp:Product)
-      OPTIONAL MATCH (p1)-[:BELONGS_TO]->(c1:Category)
-      OPTIONAL MATCH (c1)-[:PARENT_CATEGORY*0..2]->(dept1:Category {level: 2})
-      OPTIONAL MATCH (dept1)-[:COMPLEMENTARY_TO]-(dept2:Category {level: 2})
-      OPTIONAL MATCH (dept2)<-[:PARENT_CATEGORY*0..2]-(c2:Category)<-[:BELONGS_TO]-(comp)
-      WHERE comp <> p1
-      WITH competitors, complements, collect(DISTINCT comp)[..15] AS complements
+      OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b:Brand)
+      OPTIONAL MATCH (p1)-[:BELONGS_TO]->(c1:Category)-[:PARENT_CATEGORY*0..2]->(dept1:Category {level: 2})-[:COMPLEMENTARY_TO]-(dept2:Category {level: 2})
+      OPTIONAL MATCH (c2:Category)-[:PARENT_CATEGORY*0..2]->(dept2)
+      WITH competitors, p1, b, collect(DISTINCT c2) AS allowedComplementCategories
+      
+      OPTIONAL MATCH (comp:Product)-[:BELONGS_TO]->(cComp:Category)
+      OPTIONAL MATCH (comp)-[:MANUFACTURED_BY]->(compBrand:Brand)
+      WHERE cComp IN allowedComplementCategories AND compBrand = b AND comp <> p1
+      WITH competitors, collect(DISTINCT comp)[..15] AS complements, p1
       
       // C. Packaging/Flavor Siblings (Same Brand, Same Category)
-      OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b:Brand)<-[:MANUFACTURED_BY]-(sib:Product)
-      OPTIONAL MATCH (p1)-[:BELONGS_TO]->(c:Category)<-[:BELONGS_TO]-(sib)
-      WHERE sib <> p1
+      OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b:Brand)
+      OPTIONAL MATCH (p1)-[:BELONGS_TO]->(c:Category)
+      OPTIONAL MATCH (sib:Product)-[:BELONGS_TO]->(c)
+      OPTIONAL MATCH (sib)-[:MANUFACTURED_BY]->(sibBrand:Brand)
+      WHERE sibBrand = b AND sib <> p1
       WITH competitors, complements, collect(DISTINCT sib)[..15] AS siblings
       
       RETURN competitors, complements, siblings

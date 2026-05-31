@@ -96,9 +96,9 @@ async function runE2ETests() {
     }
 
     // 7. Interactive Flow Check: Autocomplete Search Suggestions
-    console.log('\n6. Testing interactive autocomplete search flow for "coke"...');
+    console.log('\n6. Testing interactive autocomplete search flow for "Raw Sugar"...');
     await page.focus('#search-input');
-    await page.keyboard.type('coke');
+    await page.keyboard.type('Raw Sugar');
 
     // Wait a brief moment for debounce and autocomplete load
     await page.waitForSelector('.suggestion-item', { timeout: 5000 });
@@ -109,12 +109,12 @@ async function runE2ETests() {
     });
 
     console.log(`--> Suggestions returned by autocomplete: ${JSON.stringify(suggestions)}`);
-    const hasCokeSuggestion = suggestions.some(val => val.toLowerCase().includes('coke'));
+    const hasRawSugarSuggestion = suggestions.some(val => val.toLowerCase().includes('raw sugar'));
 
-    if (hasCokeSuggestion) {
+    if (hasRawSugarSuggestion) {
       console.log('  [PASS] Autocomplete successfully rendered active Brand/Product suggestions.');
     } else {
-      console.error('  [FAIL] Autocomplete suggestions do not contain "coke"!');
+      console.error('  [FAIL] Autocomplete suggestions do not contain "Raw Sugar"!');
       exitCode = 1;
     }
 
@@ -170,7 +170,35 @@ async function runE2ETests() {
     console.log(`--> Substitutions Panel Content: "${subContent}"`);
     console.log(`--> Complements Panel Content: "${compToContent}"`);
     
-    console.log('  [PASS] Competitors, substitutions, and complements rendered successfully inside the Inspector Panel.');
+    // STRICT POPULATED DATA ASSERTIONS
+    const hasCompetitorsData = compContent.length > 0 && !compContent.includes('No competing brands');
+    const hasSubstitutesData = subContent.length > 0 && !subContent.includes('No product size');
+    const hasComplementsData = compToContent.length > 0 && !compToContent.includes('No complementary');
+
+    if (hasCompetitorsData) {
+      console.log('  [PASS] Competitors list is fully populated with live relation data!');
+    } else {
+      console.error('  [FAIL] Competitors list is empty or shows fallback text!');
+      exitCode = 1;
+    }
+
+    if (hasSubstitutesData) {
+      console.log('  [PASS] Substitutions list is fully populated with live relation data!');
+    } else {
+      console.error('  [FAIL] Substitutions list is empty or shows fallback text!');
+      exitCode = 1;
+    }
+
+    if (hasComplementsData) {
+      console.log('  [PASS] Complements list is fully populated with live relation data!');
+    } else {
+      console.error('  [FAIL] Complements list is empty or shows fallback text!');
+      exitCode = 1;
+    }
+
+    if (exitCode === 0) {
+      console.log('  [PASS] Competitors, substitutions, and complements rendered successfully inside the Inspector Panel with LIVE DATA.');
+    }
 
   } catch (err: any) {
     console.error('\n[CRITICAL ERROR DURING UI TESTING]:', err.message);
