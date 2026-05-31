@@ -90,6 +90,29 @@ async function checkDatabasesStatus() {
       neoInd.textContent = 'OFFLINE';
       neoInd.className = 'status-indicator offline';
     }
+
+    // Gemini status
+    const geminiInd = document.getElementById('gemini-indicator');
+    if (data.gemini) {
+      const isLlmActive = data.gemini.apiKeyPresent && data.gemini.nlqEnabled;
+      state.geminiEnabled = isLlmActive;
+      
+      if (geminiInd) {
+        if (isLlmActive) {
+          geminiInd.textContent = 'ONLINE';
+          geminiInd.className = 'status-indicator online';
+        } else {
+          geminiInd.textContent = 'DISABLED';
+          geminiInd.className = 'status-indicator warning';
+        }
+      }
+    } else {
+      state.geminiEnabled = false;
+      if (geminiInd) {
+        geminiInd.textContent = 'OFFLINE';
+        geminiInd.className = 'status-indicator offline';
+      }
+    }
   } catch (err) {
     console.error('Status check error:', err);
   }
@@ -806,6 +829,9 @@ function bindUIEvents() {
     cypherPreviewBadge.classList.add('hide');
     if (cypherExplanationText) cypherExplanationText.classList.add('hide');
 
+    const warningAlert = document.getElementById('gemini-warning-alert');
+    if (warningAlert) warningAlert.classList.add('hide');
+
     searchBarIcon.className = 'fa-solid fa-magnifying-glass search-inner-icon';
     searchInput.placeholder = 'Search products, brands, sources...';
     searchInput.value = state.activeSearchQuery;
@@ -821,8 +847,18 @@ function bindUIEvents() {
     searchInputBox.classList.add('gemini-active');
     geminiPillsList.classList.remove('hide');
 
-    searchBarIcon.className = 'fa-solid fa-wand-magic-sparkles search-inner-icon';
-    searchInput.placeholder = "Ask Gemini AI: e.g. 'Show Pepsi competitors'...";
+    const warningAlert = document.getElementById('gemini-warning-alert');
+    if (warningAlert) {
+      if (!state.geminiEnabled) {
+        warningAlert.classList.remove('hide');
+        searchInput.placeholder = "Ask fallback matcher: e.g. 'Louisiana Fish Fry'...";
+      } else {
+        warningAlert.classList.add('hide');
+        searchInput.placeholder = "Ask Gemini AI: e.g. 'Show Pepsi competitors'...";
+      }
+    } else {
+      searchInput.placeholder = "Ask Gemini AI: e.g. 'Show Pepsi competitors'...";
+    }
     
     // Clear standard search filters during AI execution
     state.activeSearchQuery = '';

@@ -320,8 +320,8 @@ export class EtlService {
 
     // E. Evaluate uncached candidate pairs using batched Gemini API Judge with robust rate limiting & exponential backoffs
     if (uncachedCatCandidates.length > 0) {
-      if (!apiKey) {
-        console.warn('Gemini API Key missing or mock, defaulting all uncached category pairs to NONE...');
+      if (!apiKey || !appConfig.llm.ingestEnabled) {
+        console.warn('Gemini API Key missing or explicitly disabled for ingestion, skipping category evaluation to preserve database purity.');
       } else {
         console.log(`Starting batched LLM category evaluations for ${uncachedCatCandidates.length} pairs...`);
         
@@ -608,18 +608,8 @@ ${JSON.stringify(promptPayload, null, 2)}
 
     // E. Evaluate uncached candidate pairs using batched Gemini API Judge with rate limiting & exponential backoff
     if (uncachedCandidates.length > 0) {
-      if (!apiKey) {
-        console.warn('Gemini API Key missing or mock, defaulting all uncached candidate pairs to COMPETES = TRUE...');
-        const insertQueries: Promise<any>[] = [];
-        for (const pair of uncachedCandidates) {
-          insertQueries.push(pgClient.query(
-            `INSERT INTO brand_competitor_judgments (brand1_id, brand2_id, competes) 
-             VALUES ($1, $2, $3) ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
-            [pair.brand1_id, pair.brand2_id, true]
-          ));
-          competitorsToLoad.push({ b1: pair.brand1_id, b2: pair.brand2_id, similarity: 0.90 });
-        }
-        await Promise.all(insertQueries);
+      if (!apiKey || !appConfig.llm.ingestEnabled) {
+        console.warn('Gemini API Key missing or explicitly disabled for ingestion, skipping brand competitor evaluation to preserve database purity.');
       } else {
         console.log(`Starting batched LLM evaluations for ${uncachedCandidates.length} pairs...`);
         
@@ -719,21 +709,7 @@ ${JSON.stringify(promptPayload, null, 2)}
               );
             }
           } catch (err: any) {
-            console.error(`[LLM Judge] Failed to process batch of size ${batch.length}:`, err.message);
-            // Fallback on failure: default to TRUE to be safe and avoid losing candidate connections
-            const values: any[] = [];
-            const valuePlaceholders: string[] = [];
-            batch.forEach((item, idx) => {
-              const offset = idx * 3;
-              valuePlaceholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
-              values.push(item.brand1_id, item.brand2_id, true);
-              competitorsToLoad.push({ b1: item.brand1_id, b2: item.brand2_id, similarity: 0.90 });
-            });
-            await pgClient.query(
-              `INSERT INTO brand_competitor_judgments (brand1_id, brand2_id, competes) 
-               VALUES ${valuePlaceholders.join(', ')} ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
-              values
-            );
+            console.error(`[LLM Judge] Failed to process batch of size ${batch.length} (Skipping batch to preserve database purity):`, err.message);
           }
         };
 

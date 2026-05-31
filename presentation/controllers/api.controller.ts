@@ -2,6 +2,7 @@ import { Context } from 'hono';
 import { SearchOrchestrator } from '../../service/orchestrator/search.orchestrator';
 import { Pool } from 'pg';
 import { Driver } from 'neo4j-driver';
+import { appConfig } from '../../configs/app.config';
 
 export class ApiController {
   constructor(
@@ -13,7 +14,12 @@ export class ApiController {
   async getDbStatus(c: Context) {
     const status: any = {
       postgres: { connected: false, rowCounts: {} },
-      neo4j: { connected: false, counts: {} }
+      neo4j: { connected: false, counts: {} },
+      gemini: {
+        apiKeyPresent: !!appConfig.geminiApiKey,
+        ingestEnabled: appConfig.llm.ingestEnabled,
+        nlqEnabled: appConfig.llm.nlqEnabled
+      }
     };
 
     // Check PostgreSQL connection

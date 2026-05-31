@@ -34,9 +34,9 @@ export class NlqService {
     let explanation = '';
     let usedFallback = false;
 
-    if (!apiKey) {
+    if (!apiKey || !appConfig.llm.nlqEnabled) {
       // 💡 Graceful fallback keyword-mapping query parser
-      console.warn('Gemini API Key missing in env, executing keyword-mapping parser fallback...');
+      console.warn('Gemini API Key missing or explicitly disabled for NLQ, executing keyword-mapping parser fallback...');
       const fallbackRes = generateFallbackCypher(question);
       cypher = fallbackRes.cypher;
       explanation = fallbackRes.explanation;

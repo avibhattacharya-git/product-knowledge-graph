@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>US Retailer Product Knowledge Graph Console</title>
+  <title>Product Knowledge Graph Console</title>
   
   <!-- SEO Meta Tags -->
   <meta name="description" content="Futuristic dark-mode knowledge graph dashboard to analyze US retailer pricing matrices, competitor trees, product substitutes, and brand hierarchies.">
@@ -32,7 +32,7 @@
     <header class="app-header">
       <div class="header-logo">
         <i class="fa-solid fa-circle-nodes logo-icon"></i>
-        <h1>RETAIL<span>GRAPH</span></h1>
+        <h1>PRODUCT<span>KNOWLEDGE GRAPH</span></h1>
         <span class="badge">V1.0</span>
       </div>
       
@@ -46,6 +46,11 @@
           <i class="fa-solid fa-network-wired status-icon"></i>
           <span>Neo4j:</span>
           <span class="status-indicator offline" id="neo-indicator">CONNECTING</span>
+        </div>
+        <div class="db-status-item" id="gemini-status">
+          <i class="fa-solid fa-wand-magic-sparkles status-icon"></i>
+          <span>Gemini NLQ:</span>
+          <span class="status-indicator offline" id="gemini-indicator">CONNECTING</span>
         </div>
         <button id="sync-db-btn" class="btn btn-secondary btn-sm" title="Sync PostgreSQL view to Neo4j Graph Database">
           <i class="fa-solid fa-rotate sync-icon"></i> Ingest & Sync
@@ -74,6 +79,15 @@
               <button class="mode-toggle-btn active" id="mode-keyword-btn"><i class="fa-solid fa-filter"></i> Keyword</button>
               <button class="mode-toggle-btn" id="mode-gemini-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> Gemini AI (NLQ)</button>
             </div>
+            
+            <!-- Gemini Warning Alert -->
+            <div class="gemini-warning-box hide" id="gemini-warning-alert">
+              <i class="fa-solid fa-circle-exclamation warning-alert-icon"></i>
+              <div class="warning-alert-content">
+                <span>Gemini API is disabled for NLQ. Searches will execute via keyword fallback parser.</span>
+              </div>
+            </div>
+
             <div class="search-input-wrapper" id="search-input-box">
               <i class="fa-solid fa-magnifying-glass search-inner-icon" id="search-bar-icon"></i>
               <input type="text" id="search-input" placeholder="Search products, brands, sources..." autocomplete="off">

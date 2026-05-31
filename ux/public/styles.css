@@ -117,7 +117,7 @@ body {
 
 .header-logo h1 {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
   letter-spacing: 0.5px;
   color: #fff;
@@ -126,6 +126,7 @@ body {
 .header-logo h1 span {
   font-weight: 400;
   color: var(--accent);
+  margin-left: 6px;
 }
 
 .header-logo .badge {
@@ -1620,6 +1621,45 @@ body {
 
 .match-badge.companion-badge:hover {
   box-shadow: 0 0 15px rgba(59, 130, 246, 0.25);
+}
+
+/* Gemini warning and state indicators */
+.status-indicator.warning {
+  color: var(--warning);
+  text-shadow: 0 0 6px rgba(234, 179, 8, 0.4);
+}
+
+.gemini-warning-box {
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 11.5px;
+  color: #ffca28;
+  line-height: 1.4;
+  backdrop-filter: blur(8px);
+  animation: slide-down-fade 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.warning-alert-icon {
+  font-size: 14px;
+  margin-top: 2px;
+  color: var(--warning);
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+.warning-alert-content {
+  flex: 1;
+}
+
+@keyframes pulse-glow {
+  0% { transform: scale(1); filter: drop-shadow(0 0 2px rgba(234, 179, 8, 0.3)); }
+  50% { transform: scale(1.05); filter: drop-shadow(0 0 8px rgba(234, 179, 8, 0.6)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 2px rgba(234, 179, 8, 0.3)); }
 }
 
 
