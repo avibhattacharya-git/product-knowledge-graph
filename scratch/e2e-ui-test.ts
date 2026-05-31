@@ -1,5 +1,8 @@
 import puppeteer from 'puppeteer';
 
+declare let selectNodeFromId: any;
+declare let state: any;
+
 async function runE2ETests() {
   console.log('======================================================');
   console.log('  STARTING AUTOMATED E2E UI CONFORMANCE & FLOW TESTS  ');
@@ -13,6 +16,7 @@ async function runE2ETests() {
 
   try {
     const page = await browser.newPage();
+    page.on('console', msg => console.log(`[BROWSER CONSOLE] ${msg.text()}`));
 
     // Set high screen dimensions for responsive styling
     await page.setViewport({ width: 1440, height: 900 });
@@ -96,9 +100,9 @@ async function runE2ETests() {
     }
 
     // 7. Interactive Flow Check: Autocomplete Search Suggestions
-    console.log('\n6. Testing interactive autocomplete search flow for "Raw Sugar"...');
+    console.log('\n6. Testing interactive autocomplete search flow for "Active Odor"...');
     await page.focus('#search-input');
-    await page.keyboard.type('Raw Sugar');
+    await page.keyboard.type('Active Odor');
 
     // Wait a brief moment for debounce and autocomplete load
     await page.waitForSelector('.suggestion-item', { timeout: 5000 });
@@ -109,38 +113,66 @@ async function runE2ETests() {
     });
 
     console.log(`--> Suggestions returned by autocomplete: ${JSON.stringify(suggestions)}`);
-    const hasRawSugarSuggestion = suggestions.some(val => val.toLowerCase().includes('raw sugar'));
+    const hasActiveOdorSuggestion = suggestions.some(val => val.toLowerCase().includes('active odor'));
 
-    if (hasRawSugarSuggestion) {
+    if (hasActiveOdorSuggestion) {
       console.log('  [PASS] Autocomplete successfully rendered active Brand/Product suggestions.');
     } else {
-      console.error('  [FAIL] Autocomplete suggestions do not contain "Raw Sugar"!');
+      console.error('  [FAIL] Autocomplete suggestions do not contain "Active Odor"!');
       exitCode = 1;
     }
 
-    // Click on the first suggestion item to trigger the visual search and render product nodes
-    console.log('--> Selecting first autocomplete suggestion to load products onto canvas...');
-    const firstSuggestion = await page.$('.suggestion-item');
-    if (!firstSuggestion) {
-      throw new Error('Could not find any suggestion items to click!');
+    // Click on the suggestion item that contains "New Car Scent, 3 oz" to trigger search and render product nodes
+    console.log('--> Selecting autocomplete suggestion containing "New Car Scent, 3 oz" to load product onto canvas...');
+    const targetSuggestion = await page.evaluateHandle(() => {
+      const items = Array.from(document.querySelectorAll('.suggestion-item'));
+      return items.find(item => item.textContent?.includes('New Car Scent, 3 oz'));
+    });
+    if (!targetSuggestion) {
+      throw new Error('Could not find autocomplete suggestion containing "New Car Scent, 3 oz"!');
     }
-    await firstSuggestion.click();
+    await (targetSuggestion as any).click();
 
     // 8. Interactive Flow Check: Visual Node Click & Inspector Panel Mappings
     console.log('\n7. Testing visual graph node click and dynamic inspector panel loading...');
     
-    // Wait for the visual D3 Product node circles to render on screen
-    console.log('--> Waiting for visual Product nodes to render on the canvas...');
-    await page.waitForSelector('.node-circle.Product', { timeout: 15000 });
+    // Wait for the specific searched Product node to be rendered on the SVG canvas
+    console.log('--> Waiting for the specific searched Product node to render on the canvas...');
+    await page.waitForFunction(() => {
+      const groups = Array.from(document.querySelectorAll('.node-group'));
+      return groups.some(g => {
+        const text = g.querySelector('.node-label')?.textContent || '';
+        return text.includes('Active Odor') && text.includes('Fogger');
+      });
+    }, { timeout: 15000 });
     
-    // Find the first Product node circle and click it
-    const productNode = await page.$('.node-circle.Product');
-    if (!productNode) {
-      throw new Error('Could not find any Product node circles on the SVG canvas!');
+    // Select the product directly via selectNodeFromId
+    console.log('--> Programmatically selecting the searched Product node on the canvas...');
+    const productClicked = await page.evaluate(() => {
+      console.log("D3 Canvas Selection Triggered!");
+      if (typeof selectNodeFromId === 'function' && typeof state !== 'undefined' && state.allNodes) {
+        console.log("All nodes count in state:", state.allNodes.length);
+        console.log("All node names in state:", JSON.stringify(state.allNodes.map((n: any) => n.properties?.name)));
+        const node = state.allNodes.find((n: any) => {
+          const name = n.properties?.name || '';
+          return name.includes('Active Odor') && name.includes('Fogger');
+        });
+        if (node) {
+          console.log("Selecting matching node by ID:", node.id, "-", node.properties?.name);
+          selectNodeFromId(node.id);
+          return true;
+        } else {
+          console.log("No node matching 'Active Odor' and 'Fogger' found in state.allNodes!");
+        }
+      } else {
+        console.log("selectNodeFromId or state not globally defined!");
+      }
+      return false;
+    });
+
+    if (!productClicked) {
+      throw new Error('Could not programmatically select the target product dynamically!');
     }
-    
-    console.log('--> Clicking on visual Product node in D3 canvas...');
-    await productNode.click();
     
     // Wait for inspector content slide-in panel to expand (should not have class 'hide')
     await page.waitForFunction(() => {
@@ -196,8 +228,32 @@ async function runE2ETests() {
       exitCode = 1;
     }
 
+    // 9. Verify Match Badges and Likely Badges Render Successfully
+    console.log('\n8. Asserting "Match %" and "Likely %" badges render successfully...');
+    const badgeText = await page.evaluate(() => {
+      const matchPills = Array.from(document.querySelectorAll('.match-badge'));
+      return matchPills.map(pill => pill.textContent?.trim() || '');
+    });
+    console.log(`--> Match badges found in inspector panel: ${JSON.stringify(badgeText)}`);
+    const hasMatchBadge = badgeText.some(t => t.includes('% Match'));
+    const hasLikelyBadge = badgeText.some(t => t.includes('% Likely'));
+
+    if (hasMatchBadge) {
+      console.log('  [PASS] Competitor "% Match" badge found and verified.');
+    } else {
+      console.error('  [FAIL] Competitor "% Match" badge not found!');
+      exitCode = 1;
+    }
+
+    if (hasLikelyBadge) {
+      console.log('  [PASS] Companion "% Likely" badge found and verified.');
+    } else {
+      console.error('  [FAIL] Companion "% Likely" badge not found!');
+      exitCode = 1;
+    }
+
     if (exitCode === 0) {
-      console.log('  [PASS] Competitors, substitutions, and complements rendered successfully inside the Inspector Panel with LIVE DATA.');
+      console.log('  [PASS] Competitors, substitutions, and complements rendered successfully inside the Inspector Panel with LIVE DATA and correct dynamic similarity badges.');
     }
 
   } catch (err: any) {

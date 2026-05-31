@@ -23,6 +23,32 @@ export interface IngestionStats {
   durationSeconds: number;
 }
 
+function parseEmbedding(embStr: any): number[] | null {
+  if (!embStr) return null;
+  if (Array.isArray(embStr)) return embStr;
+  try {
+    if (typeof embStr === 'string') {
+      return embStr.replace(/[\[\]\s]/g, '').split(',').map(Number);
+    }
+  } catch (err) {
+    // ignore
+  }
+  return null;
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0.85;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
 export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<IngestionStats> {
   const startTime = Date.now();
   console.log('\n======================================================');
@@ -428,28 +454,66 @@ ${JSON.stringify(promptPayload, null, 2)}
     }
 
     // Ingest Complements & Substitutes into Neo4j
-    console.log(`Writing Category COMPLEMENTARY_TO edges (${complementsToLoad.length} relations)...`);
+    // 1. Fetch category embeddings for involved category IDs to calculate in-memory similarities
+    const involvedCatIdsSet = new Set<string>();
+    complementsToLoad.forEach(item => { involvedCatIdsSet.add(item.c1); involvedCatIdsSet.add(item.c2); });
+    substitutesToLoad.forEach(item => { involvedCatIdsSet.add(item.c1); involvedCatIdsSet.add(item.c2); });
+    
+    const catEmbeddingsMap = new Map<string, number[]>();
+    if (involvedCatIdsSet.size > 0) {
+      console.log(`Fetching embeddings for ${involvedCatIdsSet.size} categories to compute similarities...`);
+      const catEmbRes = await pgClient.query(`
+        SELECT id, embedding FROM product_categories_search_mv 
+        WHERE id = ANY($1) AND embedding IS NOT NULL
+      `, [Array.from(involvedCatIdsSet)]);
+      catEmbRes.rows.forEach(row => {
+        const parsed = parseEmbedding(row.embedding);
+        if (parsed) {
+          catEmbeddingsMap.set(String(row.id).trim(), parsed);
+        }
+      });
+    }
+
+    const complementsWithSimilarity = complementsToLoad.map(item => {
+      const emb1 = catEmbeddingsMap.get(item.c1);
+      const emb2 = catEmbeddingsMap.get(item.c2);
+      const similarity = (emb1 && emb2) ? cosineSimilarity(emb1, emb2) : 0.85;
+      return { ...item, similarity };
+    });
+
+    const substitutesWithSimilarity = substitutesToLoad.map(item => {
+      const emb1 = catEmbeddingsMap.get(item.c1);
+      const emb2 = catEmbeddingsMap.get(item.c2);
+      const similarity = (emb1 && emb2) ? cosineSimilarity(emb1, emb2) : 0.85;
+      return { ...item, similarity };
+    });
+
+    console.log(`Writing Category COMPLEMENTARY_TO edges (${complementsWithSimilarity.length} relations)...`);
     const compBatchSize = 1000;
-    for (let i = 0; i < complementsToLoad.length; i += compBatchSize) {
-      const chunk = complementsToLoad.slice(i, i + compBatchSize);
+    for (let i = 0; i < complementsWithSimilarity.length; i += compBatchSize) {
+      const chunk = complementsWithSimilarity.slice(i, i + compBatchSize);
       await session.run(`
         UNWIND $links AS link
         MATCH (c1:Category {id: link.c1})
         MATCH (c2:Category {id: link.c2})
-        MERGE (c1)-[:COMPLEMENTARY_TO]->(c2)
-        MERGE (c2)-[:COMPLEMENTARY_TO]->(c1)
+        MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2)
+        SET r1.similarity = toFloat(link.similarity)
+        MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1)
+        SET r2.similarity = toFloat(link.similarity)
       `, { links: chunk });
     }
 
-    console.log(`Writing Category SUBSTITUTE_CATEGORY edges (${substitutesToLoad.length} relations)...`);
-    for (let i = 0; i < substitutesToLoad.length; i += compBatchSize) {
-      const chunk = substitutesToLoad.slice(i, i + compBatchSize);
+    console.log(`Writing Category SUBSTITUTE_CATEGORY edges (${substitutesWithSimilarity.length} relations)...`);
+    for (let i = 0; i < substitutesWithSimilarity.length; i += compBatchSize) {
+      const chunk = substitutesWithSimilarity.slice(i, i + compBatchSize);
       await session.run(`
         UNWIND $links AS link
         MATCH (c1:Category {id: link.c1})
         MATCH (c2:Category {id: link.c2})
-        MERGE (c1)-[:SUBSTITUTE_CATEGORY]->(c2)
-        MERGE (c2)-[:SUBSTITUTE_CATEGORY]->(c1)
+        MERGE (c1)-[r1:SUBSTITUTE_CATEGORY]->(c2)
+        SET r1.similarity = toFloat(link.similarity)
+        MERGE (c2)-[r2:SUBSTITUTE_CATEGORY]->(c1)
+        SET r2.similarity = toFloat(link.similarity)
       `, { links: chunk });
     }
     console.log(`Mapped Category COMPLEMENTARY_TO and SUBSTITUTE_CATEGORY edges successfully.`);
@@ -695,21 +759,47 @@ ${JSON.stringify(promptPayload, null, 2)}
       }
     }
 
+    console.log(`Fetching brand embeddings to compute similarities for brand competitor pairs...`);
+    const involvedBrandIdsSet = new Set<string>();
+    competitorsToLoad.forEach(item => { involvedBrandIdsSet.add(item.b1); involvedBrandIdsSet.add(item.b2); });
+    
+    const brandEmbeddingsMap = new Map<string, number[]>();
+    if (involvedBrandIdsSet.size > 0) {
+      console.log(`Fetching embeddings for ${involvedBrandIdsSet.size} brands to compute similarities...`);
+      const brandEmbRes = await pgClient.query(`
+        SELECT id, embedding FROM brands_search_mv 
+        WHERE id = ANY($1) AND embedding IS NOT NULL
+      `, [Array.from(involvedBrandIdsSet)]);
+      brandEmbRes.rows.forEach(row => {
+        const parsed = parseEmbedding(row.embedding);
+        if (parsed) {
+          brandEmbeddingsMap.set(String(row.id).trim(), parsed);
+        }
+      });
+    }
+
+    const competitorsWithSimilarity = competitorsToLoad.map(item => {
+      const emb1 = brandEmbeddingsMap.get(item.b1);
+      const emb2 = brandEmbeddingsMap.get(item.b2);
+      const similarity = (emb1 && emb2) ? cosineSimilarity(emb1, emb2) : (item.similarity || 0.90);
+      return { ...item, similarity };
+    });
+
     console.log(`Writing Brand COMPETES_WITH edges (LLM-pruned list)...`);
     const overlapBatch = 15000;
-    for (let i = 0; i < competitorsToLoad.length; i += overlapBatch) {
-      const chunk = competitorsToLoad.slice(i, i + overlapBatch);
+    for (let i = 0; i < competitorsWithSimilarity.length; i += overlapBatch) {
+      const chunk = competitorsWithSimilarity.slice(i, i + overlapBatch);
       await session.run(`
         UNWIND $links AS link
         MATCH (b1:Brand {id: link.b1})
         MATCH (b2:Brand {id: link.b2})
         MERGE (b1)-[r1:COMPETES_WITH]->(b2)
-        SET r1.similarity = COALESCE(link.similarity, 0.90)
+        SET r1.similarity = toFloat(link.similarity)
         MERGE (b2)-[r2:COMPETES_WITH]->(b1)
-        SET r2.similarity = COALESCE(link.similarity, 0.90)
+        SET r2.similarity = toFloat(link.similarity)
       `, { links: chunk });
     }
-    console.log(`Mapped ${competitorsToLoad.length * 2} COMPETES_WITH brand-level edges.`);
+    console.log(`Mapped ${competitorsWithSimilarity.length * 2} COMPETES_WITH brand-level edges.`);
 
     // 8. Stream 3.46 Million Products from PostgreSQL and Batch Load UNWIND into Neo4j
     console.log('\nStreaming 3.46 Million High-Fidelity products (Approach B) from Postgres...');

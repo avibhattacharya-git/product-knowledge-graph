@@ -439,7 +439,7 @@ async function fetchRelatedProductsIntelligence(productNode) {
   complementList.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Finding companions...</li>`;
 
   try {
-    const res = await fetch(`/api/products/${productNode.id}/related`);
+    const res = await fetch(`/api/products/${productNode.properties?.id || productNode.id}/related`);
     const data = await res.json();
 
     compList.innerHTML = '';
@@ -488,8 +488,9 @@ async function fetchRelatedProductsIntelligence(productNode) {
         li.className = 'hover-item';
         li.onclick = () => selectNodeFromId(comp.id);
         const priceStr = comp.price > 0 ? ` ($${comp.price.toFixed(2)})` : '';
+        const badgeHtml = comp.matchScore ? `<span class="match-badge companion-badge"><i class="fa-solid fa-sparkles" style="font-size: 8px; margin-right: 2px;"></i> ${comp.matchScore}% Likely</span>` : '';
         li.innerHTML = `
-          <span class="rel-item-name">${comp.name}${priceStr}</span>
+          <span class="rel-item-name">${comp.name}${priceStr}${badgeHtml}</span>
           <span class="rel-item-meta">Companion <i class="fa-solid fa-chevron-right"></i></span>
         `;
         complementList.appendChild(li);
@@ -508,7 +509,7 @@ async function fetchRelatedProductsIntelligence(productNode) {
 
 // Helper to select and highlight a node by its ID from related lists
 function selectNodeFromId(nodeId) {
-  const targetNode = state.allNodes.find(n => n.id === nodeId);
+  const targetNode = state.allNodes.find(n => n.id === nodeId || (n.properties && n.properties.id === nodeId));
   if (targetNode) {
     // Zoom/Center camera smoothly to this node on D3 canvas
     const parent = svg.node().parentElement;

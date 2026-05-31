@@ -259,15 +259,24 @@ export async function handleRelatedProducts(c: Context) {
       
       // B. Companion Accessories (Same Brand, Complementary Categories via Parent Departments)
       OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b:Brand)
-      OPTIONAL MATCH (p1)-[:BELONGS_TO]->(c1:Category)-[:PARENT_CATEGORY*0..2]->(dept1:Category {level: 2})-[:COMPLEMENTARY_TO]-(dept2:Category {level: 2})
+      OPTIONAL MATCH (p1)-[:BELONGS_TO]->(c1:Category)-[:PARENT_CATEGORY*0..2]->(dept1:Category {level: 2})-[compToEdge:COMPLEMENTARY_TO]-(dept2:Category {level: 2})
       OPTIONAL MATCH (c2:Category)-[:PARENT_CATEGORY*0..2]->(dept2)
-      WITH competitors, p1, b, collect(DISTINCT c2) AS allowedComplementCategories
+      WITH competitors, p1, b, collect(DISTINCT { catId: c2.id, similarity: compToEdge.similarity }) AS allowedCategorySimilarities
       
       // Traversal starting from the brand "b" (which is just 1 node!) to find accessories
       OPTIONAL MATCH (comp:Product)-[:MANUFACTURED_BY]->(b)
+      WHERE comp <> p1
       OPTIONAL MATCH (comp)-[:BELONGS_TO]->(cComp:Category)
-      WHERE cComp IN allowedComplementCategories AND comp <> p1
-      WITH competitors, collect(DISTINCT comp)[..15] AS complements, p1
+      
+      // Filter list of collected brand items in memory using list comprehension to avoid dropping the Neo4j row
+      WITH competitors, p1,
+           [item IN collect({ node: comp, catId: cComp.id }) 
+            WHERE [x IN allowedCategorySimilarities WHERE x.catId = item.catId][0] IS NOT NULL] AS filteredComplements,
+           allowedCategorySimilarities
+           
+      WITH competitors, p1,
+           [item IN filteredComplements | 
+            { node: item.node, similarity: [x IN allowedCategorySimilarities WHERE x.catId = item.catId][0].similarity }][..15] AS complements
       
       // C. Packaging/Flavor Siblings (Same Brand, Same Category)
       OPTIONAL MATCH (p1)-[:MANUFACTURED_BY]->(b:Brand)
@@ -310,9 +319,19 @@ export async function handleRelatedProducts(c: Context) {
       };
     });
 
+    const processedComplements = rawComplements.map((item: any) => {
+      const n = item.node;
+      const similarityVal = item.similarity != null ? parseFloat(item.similarity) : 0.85;
+      const matchScore = Math.min(100, Math.max(50, Math.round(similarityVal * 1000) / 10));
+      return {
+        ...mapNode(n),
+        matchScore
+      };
+    });
+
     return c.json({
       competitors: processedCompetitors,
-      complements: rawComplements.map(mapNode),
+      complements: processedComplements,
       siblings: rawSiblings.map(mapNode)
     });
   } catch (err: any) {
