@@ -70,7 +70,6 @@ export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<Inge
     await session.run('CREATE CONSTRAINT IF NOT EXISTS FOR (p:Product) REQUIRE p.id IS UNIQUE');
     await session.run('CREATE CONSTRAINT IF NOT EXISTS FOR (b:Brand) REQUIRE b.id IS UNIQUE');
     await session.run('CREATE CONSTRAINT IF NOT EXISTS FOR (m:Manufacturer) REQUIRE m.id IS UNIQUE');
-    await session.run('CREATE CONSTRAINT IF NOT EXISTS FOR (s:CatalogSource) REQUIRE s.id IS UNIQUE');
     await session.run('CREATE CONSTRAINT IF NOT EXISTS FOR (c:Category) REQUIRE c.id IS UNIQUE');
     console.log('Neo4j constraints verified.');
 
@@ -725,19 +724,16 @@ ${JSON.stringify(promptPayload, null, 2)}
 
     let productCount = 0;
     let relationshipCount = 0;
-    const uniqueSources = new Set<string>();
 
     // Chunk size parameters
     const batchSize = 15000;
     let productsBuffer: any[] = [];
-    let sourcedLinksBuffer: any[] = [];
     let manufacturedLinksBuffer: any[] = [];
     let categoryLinksBuffer: any[] = [];
 
     // Helper function to flush buffers concurrently to Neo4j
     const flushBatchToNeo4j = async (
       prods: any[],
-      sourced: any[],
       mfg: any[],
       belongs: any[]
     ): Promise<void> => {
@@ -751,17 +747,7 @@ ${JSON.stringify(promptPayload, null, 2)}
             ON CREATE SET prod.name = p.name, prod.price = p.price, prod.gtin = p.gtin, prod.size = p.size, prod.measure = p.measure, prod.validationState = p.validationState
           `, { batch: prods });
 
-          // B. Merge SOURCED_FROM edges
-          if (sourced.length > 0) {
-            await tx.run(`
-              UNWIND $links AS link
-              MATCH (p:Product {id: link.productId})
-              MATCH (s:CatalogSource {id: link.sourceId})
-              MERGE (p)-[:SOURCED_FROM]->(s)
-            `, { links: sourced });
-          }
-
-          // C. Merge MANUFACTURED_BY edges
+          // B. Merge MANUFACTURED_BY edges
           if (mfg.length > 0) {
             await tx.run(`
               UNWIND $links AS link
@@ -771,7 +757,7 @@ ${JSON.stringify(promptPayload, null, 2)}
             `, { links: mfg });
           }
 
-          // D. Merge BELONGS_TO edges
+          // C. Merge BELONGS_TO edges
           if (belongs.length > 0) {
             await tx.run(`
               UNWIND $links AS link
@@ -822,39 +808,28 @@ ${JSON.stringify(promptPayload, null, 2)}
         const gtin = row.product_id_value || 'N/A';
         const validationState = row.validation_state || 'VALID';
 
-        // Catalog Source channel normalization
-        const sourceName = String(row.source === 'WALMART_API' || row.source === 'WMT_COM' ? 'Walmart API' :
-                                  row.source === 'BEST_BUY' ? 'Best Buy API' :
-                                  row.source === 'IBOTTA' ? 'Ibotta Catalog' :
-                                  row.source === 'NIELSEN' ? 'Nielsen Product Data' : row.source).trim();
-        const sourceId = sourceName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-        uniqueSources.add(sourceName);
-
         // Buffer values
         productsBuffer.push({ id: productId, name: productName, price, gtin, size, measure, validationState });
-        sourcedLinksBuffer.push({ productId, sourceId });
         manufacturedLinksBuffer.push({ productId, brandId });
         categoryLinksBuffer.push({ productId, categoryId: productCategoryId });
 
         productCount++;
-        relationshipCount += 3;
+        relationshipCount += 2;
 
         // Flush Buffer when capacity is reached
         if (productsBuffer.length >= batchSize) {
           stream.pause(); // Apply backpressure: stop reading from Postgres
 
           const pCopy = [...productsBuffer];
-          const sCopy = [...sourcedLinksBuffer];
           const mCopy = [...manufacturedLinksBuffer];
           const cCopy = [...categoryLinksBuffer];
 
           productsBuffer = [];
-          sourcedLinksBuffer = [];
           manufacturedLinksBuffer = [];
           categoryLinksBuffer = [];
 
           try {
-            await flushBatchToNeo4j(pCopy, sCopy, mCopy, cCopy);
+            await flushBatchToNeo4j(pCopy, mCopy, cCopy);
             console.log(`Ingested: ${productCount.toLocaleString()} products...`);
             stream.resume(); // Resume Postgres stream
           } catch (err: any) {
@@ -867,7 +842,7 @@ ${JSON.stringify(promptPayload, null, 2)}
         // Ingest remaining buffer records
         if (productsBuffer.length > 0) {
           try {
-            await flushBatchToNeo4j(productsBuffer, sourcedLinksBuffer, manufacturedLinksBuffer, categoryLinksBuffer);
+            await flushBatchToNeo4j(productsBuffer, manufacturedLinksBuffer, categoryLinksBuffer);
             console.log(`Ingested final: ${productCount.toLocaleString()} products.`);
           } catch (err: any) {
             return reject(err);
@@ -881,16 +856,6 @@ ${JSON.stringify(promptPayload, null, 2)}
       });
     });
 
-    // 9. Load CatalogSource Nodes
-    console.log('\nLoading CatalogSources in Neo4j...');
-    for (const source of uniqueSources) {
-      const id = source.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      await session.run(`
-        MERGE (s:CatalogSource {id: $id})
-        ON CREATE SET s.name = $name
-      `, { id, name: source });
-    }
-
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
     console.log('\n======================================================');
     console.log('  ETL PIPELINE SUCCESSFULLY LOADED ALL 3.46M ITEMS!  ');
@@ -900,7 +865,7 @@ ${JSON.stringify(promptPayload, null, 2)}
       products: productCount,
       brands: brandBatch.length,
       manufacturers: manufacturerBatch.length,
-      sources: uniqueSources.size,
+      sources: 0,
       categories: categoryBatch.length,
       relationships: relationshipCount + parentLinks.length + brandOwnedLinks.length + complementsToLoad.length * 2 + substitutesToLoad.length * 2 + competitorsToLoad.length * 2,
       durationSeconds

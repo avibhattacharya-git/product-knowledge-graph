@@ -17,14 +17,12 @@ const state = {
   filters: {
     Product: true,
     Brand: true,
-    CatalogSource: true,
     Category: true
   },
   relFilters: {
     COMPETES_WITH: true,
     SUBSTITUTE_FOR: true,
     COMPLEMENTARY_TO: true,
-    SOURCED_FROM: true,
     MANUFACTURED_BY: true,
     BELONGS_TO: true,
     PARENT_CATEGORY: true
@@ -42,7 +40,6 @@ const height = window.innerHeight;
 const iconMap = {
   Product: '\uf0ab',       /* fa-box */
   Brand: '\uf1f9',         /* fa-copyright */
-  CatalogSource: '\uf511', /* fa-file-invoice */
   Category: '\uf02c'       /* fa-tags */
 };
 
@@ -50,7 +47,6 @@ const iconMap = {
 const colorMap = {
   Product: 'hsl(263, 90%, 62%)',
   Brand: 'hsl(184, 90%, 45%)',
-  CatalogSource: 'hsl(48, 95%, 50%)',
   Category: 'hsl(290, 85%, 60%)'
 };
 
@@ -89,7 +85,6 @@ async function checkDatabasesStatus() {
       // Update statistics metrics in sidebar
       document.getElementById('metric-products').textContent = data.neo4j.counts.Product || 0;
       document.getElementById('metric-brands').textContent = data.neo4j.counts.Brand || 0;
-      document.getElementById('metric-sources').textContent = data.neo4j.counts.CatalogSource || 0;
       document.getElementById('metric-categories').textContent = data.neo4j.counts.Category || 0;
     } else {
       neoInd.textContent = 'OFFLINE';
@@ -115,7 +110,7 @@ function initD3Canvas() {
 
   // SVG Marker Defs for link direction arrows
   const defs = svg.append('defs');
-  const relTypes = ['COMPETES_WITH', 'SUBSTITUTE_FOR', 'COMPLEMENTARY_TO', 'SOURCED_FROM', 'MANUFACTURED_BY', 'BELONGS_TO', 'PARENT_CATEGORY'];
+  const relTypes = ['COMPETES_WITH', 'SUBSTITUTE_FOR', 'COMPLEMENTARY_TO', 'MANUFACTURED_BY', 'BELONGS_TO', 'PARENT_CATEGORY'];
   
   relTypes.forEach(type => {
     defs.append('marker')
@@ -146,7 +141,6 @@ function initD3Canvas() {
     .force('center', d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2))
     .force('collide', d3.forceCollide().radius(32))
     .force('link', d3.forceLink().id(d => d.id).distance(d => {
-      if (d.type === 'SOURCED_FROM') return 70;
       if (d.type === 'MANUFACTURED_BY') return 90;
       if (d.type === 'BELONGS_TO') return 80;
       return 120;
@@ -157,7 +151,6 @@ function getLinkColor(type) {
   if (type === 'COMPETES_WITH') return 'hsl(330, 90%, 55%)';
   if (type === 'SUBSTITUTE_FOR') return 'hsl(196, 95%, 50%)';
   if (type === 'COMPLEMENTARY_TO') return 'hsl(142, 85%, 45%)';
-  if (type === 'SOURCED_FROM') return 'hsl(48, 95%, 50%)';
   if (type === 'MANUFACTURED_BY') return 'rgba(6, 182, 212, 0.45)';
   if (type === 'BELONGS_TO') return 'rgba(217, 70, 239, 0.4)';
   if (type === 'PARENT_CATEGORY') return 'rgba(217, 70, 239, 0.25)';
@@ -356,7 +349,7 @@ function selectNode(node) {
 
   const label = node.labels[0] || 'Product';
   document.getElementById('node-type-label').className = `node-type-tag ${label}`;
-  document.getElementById('node-type-label').textContent = label === 'CatalogSource' ? 'Source' : label;
+  document.getElementById('node-type-label').textContent = label;
   document.getElementById('node-name-label').textContent = node.properties.name || node.id;
   
   // Setup Subtitle Info
@@ -415,24 +408,13 @@ function compileProductMetadata(productNode) {
   grid.innerHTML = '';
 
   const props = productNode.properties;
-  
-  // Find the SOURCED_FROM link to show catalog source
-  const sourcedLink = state.allLinks.find(link => 
-    link.source === productNode.id && link.type === 'SOURCED_FROM'
-  );
-  let sourceName = 'Unknown Source';
-  if (sourcedLink) {
-    const sourceNode = state.allNodes.find(n => n.id === sourcedLink.target);
-    sourceName = sourceNode ? sourceNode.properties.name : sourcedLink.target;
-  }
 
   const msrpVal = parseFloat(props.price || 0);
   const items = [
     { name: 'MSRP', val: msrpVal > 0 ? `$${msrpVal.toFixed(2)}` : 'N/A' },
     { name: 'GTIN14 / SKU', val: props.gtin || 'N/A' },
     { name: 'Package Size', val: props.size ? `${props.size} ${props.measure || ''}` : 'N/A' },
-    { name: 'Validation State', val: props.validationState || 'VALID' },
-    { name: 'Catalog Source Channel', val: sourceName }
+    { name: 'Validation State', val: props.validationState || 'VALID' }
   ];
 
   items.forEach(item => {
@@ -575,8 +557,7 @@ function compileEcosystemConnections(node) {
   list.innerHTML = '';
 
   const label = node.labels[0];
-  const targetRel = label === 'Brand' ? 'MANUFACTURED_BY' : 
-                    label === 'Category' ? 'BELONGS_TO' : 'SOURCED_FROM';
+  const targetRel = label === 'Brand' ? 'MANUFACTURED_BY' : 'BELONGS_TO';
 
   const connections = state.allLinks.filter(link => 
     link.target === node.id && link.type === targetRel
@@ -811,6 +792,7 @@ function bindUIEvents() {
   const cypherPreviewBadge = document.getElementById('cypher-preview-badge');
   const cypherPreviewCode = document.getElementById('cypher-preview-code');
   const cypherBadgeRunBtn = document.getElementById('cypher-badge-run-btn');
+  const cypherExplanationText = document.getElementById('cypher-explanation-text');
 
   // Toggle to Standard Keyword Filtering Mode
   modeKeywordBtn.onclick = () => {
@@ -820,6 +802,7 @@ function bindUIEvents() {
     searchInputBox.classList.remove('gemini-active');
     geminiPillsList.classList.add('hide');
     cypherPreviewBadge.classList.add('hide');
+    if (cypherExplanationText) cypherExplanationText.classList.add('hide');
 
     searchBarIcon.className = 'fa-solid fa-magnifying-glass search-inner-icon';
     searchInput.placeholder = 'Search products, brands, sources...';
@@ -975,13 +958,21 @@ function bindUIEvents() {
         state.allLinks = data.links;
         applyGraphFilters();
 
-        // Reveal the floating Cypher preview badge
+        // Reveal the floating Cypher preview badge and reasoning explanation
         if (data.translatedCypher) {
           state.geminiCypher = data.translatedCypher;
           cypherPreviewCode.textContent = data.translatedCypher;
           cypherPreviewBadge.classList.remove('hide');
+
+          if (data.explanation && cypherExplanationText) {
+            cypherExplanationText.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent); font-size:10px; margin-right:6px;"></i> ${data.explanation}`;
+            cypherExplanationText.classList.remove('hide');
+          } else if (cypherExplanationText) {
+            cypherExplanationText.classList.add('hide');
+          }
         } else {
           cypherPreviewBadge.classList.add('hide');
+          if (cypherExplanationText) cypherExplanationText.classList.add('hide');
         }
       } else {
         showToast(`Gemini execution failed: ${data.error}`, 'error');
@@ -1059,6 +1050,7 @@ function bindUIEvents() {
     searchInput.value = '';
     clearSearchBtn.style.display = 'none';
     cypherPreviewBadge.classList.add('hide');
+    if (cypherExplanationText) cypherExplanationText.classList.add('hide');
 
     if (state.searchMode === 'keyword') {
       state.activeSearchQuery = '';
@@ -1067,7 +1059,7 @@ function bindUIEvents() {
   };
 
   // Visibility Checkboxes
-  const nodeTypes = ['Product', 'Brand', 'CatalogSource', 'Category'];
+  const nodeTypes = ['Product', 'Brand', 'Category'];
   nodeTypes.forEach(type => {
     const chk = document.getElementById(`show-${type.toLowerCase()}-checkbox`);
     chk.addEventListener('change', (e) => {
@@ -1076,7 +1068,7 @@ function bindUIEvents() {
     });
   });
 
-  const relTypes = ['COMPETES_WITH', 'SUBSTITUTE_FOR', 'COMPLEMENTARY_TO', 'SOURCED_FROM'];
+  const relTypes = ['COMPETES_WITH', 'SUBSTITUTE_FOR', 'COMPLEMENTARY_TO'];
   relTypes.forEach(type => {
     const chk = document.getElementById(`rel-${getRelCheckSuffix(type)}-checkbox`);
     chk.addEventListener('change', (e) => {
@@ -1158,8 +1150,6 @@ function bindUIEvents() {
       editor.value = 'MATCH (p1:Product)-[r:SUBSTITUTE_FOR]->(p2:Product)\nRETURN p1, r, p2 LIMIT 100;';
     } else if (val === 'match_complements') {
       editor.value = 'MATCH (p1:Product)-[r:COMPLEMENTARY_TO]->(p2:Product)\nRETURN p1, r, p2 LIMIT 100;';
-    } else if (val === 'match_walmart_source') {
-      editor.value = 'MATCH (p:Product)-[s:SOURCED_FROM]->(src:CatalogSource {name: "Walmart API"})\nRETURN p, s, src LIMIT 50;';
     } else if (val === 'electronics_shortest_path') {
       editor.value = 'MATCH path = shortestPath((c1:Category {name: "Baking Mixes"})-[:PARENT_CATEGORY*..5]-(c2:Category {name: "Baking"}))\nRETURN path;';
     }

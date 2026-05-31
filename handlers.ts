@@ -300,10 +300,61 @@ export async function handleRelatedProducts(c: Context) {
 }
 
 // Helper: Smart keyword-matching resilient Cypher fallback parser
-function generateFallbackCypher(question: string): string {
+function generateFallbackCypher(question: string): { cypher: string; explanation: string } {
   const qLower = question.toLowerCase();
   
-  // 1. Competitors / Rivals (Brand level)
+  // 1. Category-level Substitutes / Alternatives
+  if (qLower.includes('substitute category') || qLower.includes('alternative category') || qLower.includes('related category')) {
+    const ignoreWords = ['show', 'me', 'substitute', 'substitutes', 'alternative', 'alternatives', 'category', 'categories', 'related', 'relation', 'relations', 'of', 'for', 'the', 'a', 'an', 'please', 'list', 'find'];
+    const words = qLower
+      .replace(/[^a-z0-9\s]/g, '')
+      .split(/\s+/)
+      .filter(w => w.length > 1 && !ignoreWords.includes(w));
+
+    if (words.length > 0) {
+      const constraints = words.map(w => `toLower(c1.name) CONTAINS "${w}"`).join(' AND ');
+      return {
+        cypher: `
+          MATCH (c1:Category)-[r:SUBSTITUTE_CATEGORY]-(c2:Category)
+          WHERE ${constraints}
+          RETURN c1, r, c2 LIMIT 50
+        `,
+        explanation: `Located category matching "${words.join(' ')}" and mapped its substitute alternatives using SUBSTITUTE_CATEGORY edges.`
+      };
+    }
+    return {
+      cypher: 'MATCH (c1:Category)-[r:SUBSTITUTE_CATEGORY]-(c2:Category) RETURN c1, r, c2 LIMIT 50',
+      explanation: 'Mapped all category-level substitution alternatives database-wide.'
+    };
+  }
+
+  // 2. Category Hierarchy / Parent / Breadcrumb Path
+  if (qLower.includes('parent') || qLower.includes('hierarchy') || qLower.includes('path') || qLower.includes('breadcrumb')) {
+    const ignoreWords = ['show', 'me', 'parent', 'parents', 'hierarchy', 'hierarchies', 'path', 'paths', 'breadcrumb', 'breadcrumbs', 'category', 'categories', 'tree', 'of', 'for', 'the', 'a', 'an', 'please', 'list', 'find'];
+    const words = qLower
+      .replace(/[^a-z0-9\s]/g, '')
+      .split(/\s+/)
+      .filter(w => w.length > 1 && !ignoreWords.includes(w));
+
+    if (words.length > 0) {
+      const constraints = words.map(w => `toLower(c.name) CONTAINS "${w}"`).join(' AND ');
+      return {
+        cypher: `
+          MATCH (c:Category)
+          WHERE ${constraints}
+          OPTIONAL MATCH path = (c)-[:PARENT_CATEGORY*0..]->(parent:Category)
+          RETURN path LIMIT 50
+        `,
+        explanation: `Traversed the hierarchical taxonomy tree for category "${words.join(' ')}" using PARENT_CATEGORY edges.`
+      };
+    }
+    return {
+      cypher: 'MATCH (c1:Category)-[r:PARENT_CATEGORY]->(c2:Category) RETURN c1, r, c2 LIMIT 50',
+      explanation: 'Mapped direct parent category hierarchies.'
+    };
+  }
+
+  // 3. Competitors / Rivals (Brand level)
   if (qLower.includes('rival') || qLower.includes('competitor') || qLower.includes('compete')) {
     const ignoreWords = ['show', 'me', 'competitor', 'competitors', 'competes', 'compete', 'rival', 'rivals', 'of', 'for', 'the', 'a', 'an', 'brand', 'brands', 'please', 'list', 'find'];
     const words = qLower
@@ -313,16 +364,22 @@ function generateFallbackCypher(question: string): string {
 
     if (words.length > 0) {
       const constraints = words.map(w => `toLower(b1.name) CONTAINS "${w}"`).join(' AND ');
-      return `
-        MATCH (b1:Brand)-[r:COMPETES_WITH]-(b2:Brand)
-        WHERE ${constraints}
-        RETURN b1, r, b2 LIMIT 50
-      `;
+      return {
+        cypher: `
+          MATCH (b1:Brand)-[r:COMPETES_WITH]-(b2:Brand)
+          WHERE ${constraints}
+          RETURN b1, r, b2 LIMIT 50
+        `,
+        explanation: `Fuzzy-matched brand "${words.join(' ')}" and returned its retail competitors using COMPETES_WITH edges.`
+      };
     }
-    return 'MATCH (b1:Brand)-[r:COMPETES_WITH]-(b2:Brand) RETURN b1, r, b2 LIMIT 50';
+    return {
+      cypher: 'MATCH (b1:Brand)-[r:COMPETES_WITH]-(b2:Brand) RETURN b1, r, b2 LIMIT 50',
+      explanation: 'Returned all active brand-level competitor relationships.'
+    };
   }
   
-  // 2. Complements / Accessories / Companions (Category level)
+  // 4. Complements / Accessories / Companions (Category level)
   if (qLower.includes('complement') || qLower.includes('accessory') || qLower.includes('companion')) {
     const ignoreWords = ['show', 'me', 'complement', 'complements', 'complementary', 'accessory', 'accessories', 'companion', 'companions', 'of', 'for', 'the', 'a', 'an', 'please', 'list', 'find', 'lets', 'do', 'product', 'search', 'shopping', 'items', 'item'];
     const words = qLower
@@ -333,42 +390,48 @@ function generateFallbackCypher(question: string): string {
     if (words.length > 0) {
       // High-fidelity dental/oral complements dynamic mapper (bridges missing complements in loaded database)
       if (words.some(w => w.includes('toothbrush') || w.includes('brush') || w.includes('oral') || w.includes('teeth') || w.includes('dental'))) {
-        return `
-          MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "toothbrush" OR toLower(c1.name) CONTAINS "oral care"
-          MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "toothpaste" OR toLower(c2.name) CONTAINS "mouthwash" OR toLower(c2.name) CONTAINS "floss"
-          WITH c1, c2
-          
-          // Subquery block 1: limit product lookups to avoid Cartesian products
-          CALL {
-            WITH c1
-            MATCH (p1:Product)-[r1:BELONGS_TO]->(c1)
-            RETURN p1, r1 LIMIT 12
-          }
-          
-          // Subquery block 2: limit companion oral care lookups
-          CALL {
-            WITH c2
-            MATCH (p2:Product)-[r2:BELONGS_TO]->(c2)
-            RETURN p2, r2 LIMIT 12
-          }
-          
-          // Dynamically draw a virtual COMPLEMENTARY_TO edge for graph visualization
-          MERGE (c1)-[v:COMPLEMENTARY_TO]->(c2)
-          RETURN c1, v, c2, p1, r1, p2, r2
-        `;
+        return {
+          cypher: `
+            MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "toothbrush" OR toLower(c1.name) CONTAINS "oral care"
+            MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "toothpaste" OR toLower(c2.name) CONTAINS "mouthwash" OR toLower(c2.name) CONTAINS "floss"
+            WITH c1, c2
+            
+            CALL {
+              WITH c1
+              MATCH (p1:Product)-[r1:BELONGS_TO]->(c1)
+              RETURN p1, r1 LIMIT 12
+            }
+            
+            CALL {
+              WITH c2
+              MATCH (p2:Product)-[r2:BELONGS_TO]->(c2)
+              RETURN p2, r2 LIMIT 12
+            }
+            
+            MERGE (c1)-[v:COMPLEMENTARY_TO]->(c2)
+            RETURN c1, v, c2, p1, r1, p2, r2
+          `,
+          explanation: 'Dynamically linked oral care/toothbrush products with complementary toothpaste and mouthwash selections.'
+        };
       }
 
       const constraints = words.map(w => `toLower(c1.name) CONTAINS "${w}"`).join(' AND ');
-      return `
-        MATCH (c1:Category)-[r:COMPLEMENTARY_TO]-(c2:Category)
-        WHERE ${constraints}
-        RETURN c1, r, c2 LIMIT 50
-      `;
+      return {
+        cypher: `
+          MATCH (c1:Category)-[r:COMPLEMENTARY_TO]-(c2:Category)
+          WHERE ${constraints}
+          RETURN c1, r, c2 LIMIT 50
+        `,
+        explanation: `Located category "${words.join(' ')}" and mapped its companion complementary accessories via COMPLEMENTARY_TO edges.`
+      };
     }
-    return 'MATCH (c1:Category)-[r:COMPLEMENTARY_TO]-(c2:Category) RETURN c1, r, c2 LIMIT 50';
+    return {
+      cypher: 'MATCH (c1:Category)-[r:COMPLEMENTARY_TO]-(c2:Category) RETURN c1, r, c2 LIMIT 50',
+      explanation: 'Mapped all complementary category pairs.'
+    };
   }
 
-  // 3. Substitutes / Replacements (Products in the same Category)
+  // 5. Substitutes / Replacements (Products in the same Category)
   if (qLower.includes('substitute') || qLower.includes('replace')) {
     const ignoreWords = ['show', 'me', 'substitute', 'substitutes', 'replace', 'replacements', 'replacement', 'of', 'for', 'the', 'a', 'an', 'please', 'list', 'find'];
     const words = qLower
@@ -378,16 +441,22 @@ function generateFallbackCypher(question: string): string {
 
     if (words.length > 0) {
       const constraints = words.map(w => `toLower(p1.name) CONTAINS "${w}"`).join(' AND ');
-      return `
-        MATCH (p1:Product)-[r1:BELONGS_TO]->(c:Category)<-[r2:BELONGS_TO]-(p2:Product)
-        WHERE ${constraints} AND p1 <> p2
-        RETURN p1, r1, c, r2, p2 LIMIT 50
-      `;
+      return {
+        cypher: `
+          MATCH (p1:Product)-[r1:BELONGS_TO]->(c:Category)<-[r2:BELONGS_TO]-(p2:Product)
+          WHERE ${constraints} AND p1 <> p2
+          RETURN p1, r1, c, r2, p2 LIMIT 50
+        `,
+        explanation: `Searched for value alternative substitutes for product "${words.join(' ')}" by matching siblings sharing Category BELONGS_TO edges.`
+      };
     }
-    return 'MATCH (p1:Product)-[r1:BELONGS_TO]->(c:Category)<-[r2:BELONGS_TO]-(p2:Product) WHERE p1 <> p2 RETURN p1, r1, c, r2, p2 LIMIT 50';
+    return {
+      cypher: 'MATCH (p1:Product)-[r1:BELONGS_TO]->(c:Category)<-[r2:BELONGS_TO]-(p2:Product) WHERE p1 <> p2 RETURN p1, r1, c, r2, p2 LIMIT 50',
+      explanation: 'Returned product substitutes sharing category affiliations.'
+    };
   }
 
-  // 4. Standard Product keyword search (Smart Noun-Phrase Extractor stop-word filters)
+  // 6. Standard Product keyword search (Smart Noun-Phrase Extractor stop-word filters)
   const keyStopwords = ['show', 'me', 'products', 'for', 'the', 'a', 'an', 'find', 'list', 'get', 'of', 'in', 'with', 'to', 'items', 'i', 'want', 'please', 'any'];
   const words = qLower
     .replace(/[^a-z0-9\s]/g, '')
@@ -396,15 +465,21 @@ function generateFallbackCypher(question: string): string {
   
   if (words.length > 0) {
     const constraints = words.map(w => `toLower(p.name) CONTAINS "${w}"`).join(' AND ');
-    return `
-      MATCH (p:Product)
-      WHERE ${constraints}
-      OPTIONAL MATCH (p)-[r1:BELONGS_TO]->(c:Category)
-      OPTIONAL MATCH (p)-[r2:MANUFACTURED_BY]->(b:Brand)
-      RETURN p, r1, c, r2, b LIMIT 80
-    `;
+    return {
+      cypher: `
+        MATCH (p:Product)
+        WHERE ${constraints}
+        OPTIONAL MATCH (p)-[r1:BELONGS_TO]->(c:Category)
+        OPTIONAL MATCH (p)-[r2:MANUFACTURED_BY]->(b:Brand)
+        RETURN p, r1, c, r2, b LIMIT 80
+      `,
+      explanation: `Searched the catalog for products matching key phrases "${words.join(' ')}" and returned their brand/category associations.`
+    };
   }
-  return 'MATCH (p:Product)-[r]->(m) RETURN p, r, m LIMIT 80;';
+  return {
+    cypher: 'MATCH (p:Product)-[r]->(m) RETURN p, r, m LIMIT 80;',
+    explanation: 'Returned general products and their direct properties.'
+  };
 }
 
 // 7. POST /api/nlq - Gemini AI Search Text-to-Cypher Translator
@@ -415,12 +490,15 @@ export async function handleNLQQuery(c: Context) {
   const apiKey = process.env.GEMINI_API_KEY;
   
   let cypher = '';
+  let explanation = '';
   let usedFallback = false;
 
   if (!apiKey || apiKey === 'your_gemini_api_key_here') {
     // 💡 Graceful fallback keyword-mapping query parser
     console.warn('Gemini API Key missing in env, executing keyword-mapping parser fallback...');
-    cypher = generateFallbackCypher(question);
+    const fallbackRes = generateFallbackCypher(question);
+    cypher = fallbackRes.cypher;
+    explanation = fallbackRes.explanation;
     usedFallback = true;
   } else {
     // High-performance Gemini API Call
@@ -433,15 +511,21 @@ Given the following database schema:
     - Product (id, name, price, gtin, size, measure, validationState)
     - Brand (id, name, privateLabel, source)
     - Category (id, name, taxonomy, level)
-    - CatalogSource (id, name)
   - Relationships:
-    - (Product)-[:SOURCED_FROM]->(CatalogSource) (Which API fed this product)
     - (Product)-[:MANUFACTURED_BY]->(Brand) (Brand owner)
     - (Product)-[:BELONGS_TO]->(Category) (Category taxonomy matching)
     - (Brand)-[:COMPETES_WITH]->(Brand) (Brand-level overlapping competitive rivalry)
+    - (Category)-[:SUBSTITUTE_CATEGORY]->(Category) (Fuzzy/vector mapped product substitutes)
     - (Category)-[:COMPLEMENTARY_TO]->(Category) (Ecosystem bundle accessory pairs)
+    - (Category)-[:PARENT_CATEGORY]->(Category) (Taxonomy tree parent category links)
 
-Translate the user's natural language question into a single, valid, and highly optimized Neo4j Cypher query.
+Translate the user's natural language question into a single, valid, and highly optimized Neo4j Cypher query, and provide a clear, plain-English explanation of how you structured the query and what assumptions you made.
+
+Your output MUST be a JSON object with EXACTLY the following structure. Do NOT include any markdown code wraps (like \`\`\`json or \`\`\`), do NOT include any surrounding text. Just return the JSON object:
+{
+  "cypher": "The valid Neo4j Cypher query",
+  "explanation": "A concise, plain-English explanation (1-2 sentences) of what the query is doing, including any fuzzy/spelling matching or synonyms used to map the entities."
+}
 
 Strict Translation Rules:
 1. Multi-Word Search Terms: When the user searches for a product phrase containing multiple words (e.g., "wet dog food" or "baking mix"), you MUST query them case-insensitively using AND operators for each word to avoid loose matches, OR search for the exact combined phrase.
@@ -449,12 +533,20 @@ Strict Translation Rules:
    - Bad: toLower(p.name) CONTAINS "wet" OR toLower(p.name) CONTAINS "dog" OR toLower(p.name) CONTAINS "food" (NEVER do this, as it matches irrelevant items!)
 2. Category Mapping: If the search matches a general category of items (e.g., "dog food", "pet care", "electronics", "audio"), attempt to locate the Category node case-insensitively and match products belonging to it:
    - Example: MATCH (p:Product)-[r:BELONGS_TO]->(c:Category) WHERE toLower(c.name) CONTAINS "pet food"
-3. Price constraints: Map "under $X" or "cheap" to p.price < X, and "above $X" to p.price > X.
-4. Return Format: Return the complete paths so they render visually: MATCH (p:Product)-[r1:BELONGS_TO]->(c:Category), (p)-[r2:MANUFACTURED_BY]->(b:Brand) RETURN p, r1, c, r2, b LIMIT 100.
-5. NO EXPLANATIONS: Return ONLY the Cypher query. Do not wrap in markdown block fences (\`\`\`cypher), do not write any surrounding text.
+3. Colloquial Entity Normalization & Synonyms:
+   - If the user queries a colloquial brand name or abbreviation (e.g., "Coke", "Pepsi", "Gillette"), write case-insensitive matching logic to capture the full name in the database (e.g., toLower(b.name) CONTAINS "coca" for Coke).
+   - If a category is queried colloquially (e.g., "soda", "detergent"), map it to the corresponding category name (e.g., toLower(c.name) CONTAINS "carbonated" or toLower(c.name) CONTAINS "laundry").
+4. Relationships: Use the correct relationships from the schema.
+   - Category-to-Category: SUBSTITUTE_CATEGORY, COMPLEMENTARY_TO, PARENT_CATEGORY.
+   - Brand-to-Brand: COMPETES_WITH.
+   - Product-to-Brand: MANUFACTURED_BY.
+   - Product-to-Category: BELONGS_TO.
+5. Price constraints: Map "under $X" or "cheap" to p.price < X, and "above $X" to p.price > X.
+6. Return Format: Return the complete paths so they render visually: e.g., MATCH (p:Product)-[r1:BELONGS_TO]->(c:Category), (p)-[r2:MANUFACTURED_BY]->(b:Brand) RETURN p, r1, c, r2, b LIMIT 100.
+7. Valid JSON: Ensure the Cypher query and the explanation are properly escaped so that the JSON parser does not fail (e.g., escape double quotes in the Cypher query).
 
 User Question: "${question}"
-Cypher:`;
+Output JSON:`;
 
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
       const response = await fetch(geminiUrl, {
@@ -478,16 +570,42 @@ Cypher:`;
       const rawText = resData.candidates[0].content.parts[0].text;
       
       // Strip any markdown code wraps
-      cypher = rawText
+      const cleanedText = rawText
+        .replace(/```json/gi, '')
         .replace(/```cypher/gi, '')
         .replace(/```/g, '')
         .trim();
 
+      try {
+        const parsed = JSON.parse(cleanedText);
+        cypher = parsed.cypher;
+        explanation = parsed.explanation;
+      } catch (jsonErr) {
+        console.warn('Failed to parse Gemini response as JSON. Attempting regex extraction...', jsonErr);
+        const cypherMatch = cleanedText.match(/"cypher"\s*:\s*"([^"]+)"/);
+        const explanationMatch = cleanedText.match(/"explanation"\s*:\s*"([^"]+)"/);
+        
+        if (cypherMatch && cypherMatch[1]) {
+          cypher = cypherMatch[1].replace(/\\"/g, '"');
+        } else {
+          cypher = cleanedText;
+        }
+        
+        if (explanationMatch && explanationMatch[1]) {
+          explanation = explanationMatch[1].replace(/\\"/g, '"');
+        } else {
+          explanation = `Translated query for: "${question}"`;
+        }
+      }
+
       console.log(`Gemini successfully generated Cypher: ${cypher}`);
+      console.log(`Gemini Reasoning: ${explanation}`);
 
     } catch (err: any) {
       console.error('Gemini translation failed, executing intelligent fallback parser:', err.message);
-      cypher = generateFallbackCypher(question);
+      const fallbackRes = generateFallbackCypher(question);
+      cypher = fallbackRes.cypher;
+      explanation = fallbackRes.explanation;
       usedFallback = true;
     }
   }
@@ -498,10 +616,11 @@ Cypher:`;
     const result = await session.run(cypher);
     const graph = formatNeoResult(result);
     
-    // Return standard D3 visual graph AND the translated Cypher string to reveal in UI
+    // Return standard D3 visual graph AND the translated Cypher string + explanation to reveal in UI
     return c.json({
       ...graph,
       translatedCypher: cypher,
+      explanation: explanation,
       isFallback: usedFallback
     });
   } catch (err: any) {
@@ -511,7 +630,7 @@ Cypher:`;
   }
 }
 
-// 8. GET /api/search - Global keyword search across Neo4j Product, Brand, Category, or Source
+// 8. GET /api/search - Global keyword search across Neo4j Product, Brand, or Category
 export async function handleSearch(c: Context) {
   const q = c.req.query('q');
   if (!q) return c.json({ nodes: [], links: [] });
@@ -645,11 +764,9 @@ export async function handleProductDetail(c: Context) {
       MATCH (p:Product {id: $id})
       OPTIONAL MATCH (p)-[:MANUFACTURED_BY]->(b:Brand)
       OPTIONAL MATCH (p)-[:BELONGS_TO]->(cat:Category)
-      OPTIONAL MATCH (p)-[:SOURCED_FROM]->(s:CatalogSource)
       RETURN p.id AS id, p.name AS name, p.price AS price, p.gtin AS gtin, p.size AS size, p.measure AS measure, p.validationState AS validationState,
              b.id AS brandId, b.name AS brandName,
-             cat.id AS categoryId, cat.name AS categoryName,
-             s.id AS sourceId, s.name AS sourceName
+             cat.id AS categoryId, cat.name AS categoryName
     `, { id: productId });
     
     if (result.records.length === 0) {
@@ -667,7 +784,7 @@ export async function handleProductDetail(c: Context) {
       validationState: rec.get('validationState'),
       brand: rec.get('brandId') ? { id: rec.get('brandId'), name: rec.get('brandName') } : null,
       category: rec.get('categoryId') ? { id: rec.get('categoryId'), name: rec.get('categoryName') } : null,
-      source: rec.get('sourceId') ? { id: rec.get('sourceId'), name: rec.get('sourceName') } : null
+      source: null
     });
   } catch (err: any) {
     return c.json({ error: err.message }, 500);

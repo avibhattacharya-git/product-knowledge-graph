@@ -103,7 +103,7 @@
                 <span class="checkbox-custom checkbox-brand"></span>
                 <i class="fa-solid fa-copyright"></i> Brands
               </label>
-              <label class="filter-checkbox-label">
+              <label class="filter-checkbox-label" style="display: none;">
                 <input type="checkbox" id="show-catalogsource-checkbox" checked>
                 <span class="checkbox-custom checkbox-catalogsource"></span>
                 <i class="fa-solid fa-file-invoice"></i> Sources
@@ -135,7 +135,7 @@
                 <span class="rel-line-legend comp-to-legend"></span>
                 <span class="rel-text">Complementary</span>
               </label>
-              <label class="rel-filter-item">
+              <label class="rel-filter-item" style="display: none;">
                 <input type="checkbox" id="rel-sourced-checkbox" checked>
                 <span class="rel-line-legend sourced-legend"></span>
                 <span class="rel-text">Sourced From</span>
@@ -155,7 +155,7 @@
                 <div class="metric-num" id="metric-brands">0</div>
                 <div class="metric-label">Brands</div>
               </div>
-              <div class="metric-card">
+              <div class="metric-card" style="display: none;">
                 <div class="metric-num" id="metric-sources">0</div>
                 <div class="metric-label">Sources</div>
               </div>
@@ -232,11 +232,16 @@
 
         <!-- Floating Cypher Tooltip Badge -->
         <div class="cypher-tooltip-badge hide" id="cypher-preview-badge">
-          <div class="badge-text">
-            <i class="fa-solid fa-sparkles text-gemini mr-1"></i>
-            <span>Gemini Cypher: <code id="cypher-preview-code">MATCH (n) ...</code></span>
+          <div class="badge-main-row">
+            <div class="badge-text">
+              <i class="fa-solid fa-sparkles text-gemini mr-1"></i>
+              <span>Gemini Cypher: <code id="cypher-preview-code">MATCH (n) ...</code></span>
+            </div>
+            <button id="cypher-badge-run-btn" class="btn btn-gemini btn-xs"><i class="fa-solid fa-play"></i> Run in Sandbox</button>
           </div>
-          <button id="cypher-badge-run-btn" class="btn btn-gemini btn-xs"><i class="fa-solid fa-play"></i> Run in Sandbox</button>
+          <div class="badge-explanation-row hide" id="cypher-explanation-text">
+            AI is reasoning...
+          </div>
         </div>
 
         <!-- Cypher IDE Shell Console -->
@@ -253,15 +258,14 @@
                 <option value="match_competitors">2. Find Direct Brand Competitors</option>
                 <option value="match_substitutes">3. Find Product Substitutions (Value Alternatives)</option>
                 <option value="match_complements">4. Match Product Complements & Companion Items</option>
-                <option value="match_walmart_source">5. Products Sourced from Walmart API</option>
-                <option value="electronics_shortest_path">6. Shortest Paths in Category Trees</option>
+                <option value="electronics_shortest_path">5. Shortest Paths in Category Trees</option>
               </select>
               <button id="toggle-drawer-btn" class="drawer-toggle-btn"><i class="fa-solid fa-chevron-up"></i></button>
             </div>
           </div>
           <div class="drawer-body">
             <div class="cypher-editor-pane">
-              <textarea id="cypher-query-input" placeholder="MATCH (p:Product)-[r:SOURCED_FROM]->(s:CatalogSource) RETURN p, r, s LIMIT 100;" spellcheck="false"></textarea>
+              <textarea id="cypher-query-input" placeholder="MATCH (p:Product)-[r:BELONGS_TO]->(c:Category) RETURN p, r, c LIMIT 100;" spellcheck="false"></textarea>
               <div class="editor-action-bar">
                 <span class="editor-info"><i class="fa-solid fa-circle-info"></i> Direct Neo4j Bolt execution session</span>
                 <button id="run-cypher-btn" class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Execute Cypher</button>
@@ -284,7 +288,7 @@
           <div id="inspector-default-message" class="inspector-empty-state">
             <i class="fa-solid fa-hand-pointer pulse-icon"></i>
             <h4>Interactive Intelligence Map</h4>
-            <p>Select any node (Product, Brand, Source, Category) in the graph network to display its connected retail metrics, pricing structures, and competitor maps here.</p>
+            <p>Select any node (Product, Brand, Category) in the graph network to display its connected retail metrics, pricing structures, and competitor maps here.</p>
           </div>
 
           <!-- Dynamic Inspection Views -->
