@@ -1487,4 +1487,6 @@ async function fetchCategoryRelationsIntelligence(categoryNode) {
   }
 }
 
-
+// Expose state and selectNodeFromId globally on window for E2E validation
+window.state = state;
+window.selectNodeFromId = selectNodeFromId;

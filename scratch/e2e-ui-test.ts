@@ -150,16 +150,17 @@ async function runE2ETests() {
     console.log('--> Programmatically selecting the searched Product node on the canvas...');
     const productClicked = await page.evaluate(() => {
       console.log("D3 Canvas Selection Triggered!");
-      if (typeof selectNodeFromId === 'function' && typeof state !== 'undefined' && state.allNodes) {
-        console.log("All nodes count in state:", state.allNodes.length);
-        console.log("All node names in state:", JSON.stringify(state.allNodes.map((n: any) => n.properties?.name)));
-        const node = state.allNodes.find((n: any) => {
+      const win = window as any;
+      if (typeof win.selectNodeFromId === 'function' && typeof win.state !== 'undefined' && win.state.allNodes) {
+        console.log("All nodes count in state:", win.state.allNodes.length);
+        console.log("All node names in state:", JSON.stringify(win.state.allNodes.map((n: any) => n.properties?.name)));
+        const node = win.state.allNodes.find((n: any) => {
           const name = n.properties?.name || '';
           return name.includes('Active Odor') && name.includes('Fogger');
         });
         if (node) {
           console.log("Selecting matching node by ID:", node.id, "-", node.properties?.name);
-          selectNodeFromId(node.id);
+          win.selectNodeFromId(node.id);
           return true;
         } else {
           console.log("No node matching 'Active Odor' and 'Fogger' found in state.allNodes!");
