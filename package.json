@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "bun main.ts",
-    "ingest": "bun etl.ts",
+    "ingest": "bun utility-scripts/run-etl.ts",
+    "seed": "bun utility-scripts/seed.ts",
+    "test:ux": "bun tests/ux/e2e-ui-test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

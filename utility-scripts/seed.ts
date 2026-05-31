@@ -1,13 +1,4 @@
-require('dotenv').config();
-const neo4j = require('neo4j-driver');
-
-const neoDriver = neo4j.driver(
-  process.env.NEO4J_URI || 'bolt://localhost:7687',
-  neo4j.auth.basic(
-    process.env.NEO4J_USER || 'neo4j',
-    process.env.NEO4J_PASSWORD || 'retailpassword123'
-  )
-);
+import { getNeoSession, neoDriver } from '../factory/database.factory';
 
 const seedCypher = `
   // Create unique constraints
@@ -115,12 +106,50 @@ const seedCypher = `
 `;
 
 async function seed() {
-  console.log('Connecting to Neo4j...');
-  const session = neoDriver.session();
+  console.log('Connecting to Neo4j via Database Factory...');
+  const seedDbName = process.env.NEO4J_DATABASE_SEED || 'MOCK';
+  console.log(`Targeting separate seeder database: "${seedDbName}"`);
+  const session = getNeoSession('WRITE', seedDbName);
   try {
-    console.log('Clearing Neo4j database...');
-    await session.run('MATCH (n) DETACH DELETE n');
-    console.log('Database cleared.');
+    // STRICT ENTERPRISE PROTECTION GUARDS
+    // Guard A: Check if database is already populated
+    const countCheck = await session.run('MATCH (n) RETURN count(n) as count');
+    const nodeCount = countCheck.records[0].get('count').toNumber();
+    if (nodeCount > 1000) {
+      console.error(`\n[CRITICAL FAILURE] Seeding blocked! Database already has ${nodeCount.toLocaleString()} nodes.`);
+      console.error(`Running the seeder would overwrite your fully loaded graph database.`);
+      console.error(`To protect your data, seeding is automatically aborted.\n`);
+      process.exit(1);
+    }
+
+    // Guard B: Require explicit environment variable validation
+    if (process.env.ALLOW_SEED_TRUNCATE !== 'true') {
+      console.error(`\n[CRITICAL FAILURE] Seeding blocked! ALLOW_SEED_TRUNCATE environment lock is active.`);
+      console.error(`If you explicitly wish to clear and re-seed your graph, add the following to your .env:`);
+      console.error(`  ALLOW_SEED_TRUNCATE=true\n`);
+      process.exit(1);
+    }
+
+    console.log('Clearing Neo4j database using failsafe batch truncation...');
+    let deletedRelsCount = 0;
+    let deletedNodesCount = 0;
+    while (true) {
+      const loopRes = await session.run(`
+        MATCH ()-[r]->() WITH r LIMIT 50000 DELETE r RETURN count(r) as count
+      `);
+      const count = loopRes.records[0].get('count').toNumber();
+      deletedRelsCount += count;
+      if (count === 0) break;
+    }
+    while (true) {
+      const loopRes = await session.run(`
+        MATCH (n) WITH n LIMIT 50000 DELETE n RETURN count(n) as count
+      `);
+      const count = loopRes.records[0].get('count').toNumber();
+      deletedNodesCount += count;
+      if (count === 0) break;
+    }
+    console.log(`Database cleared. Deleted ${deletedRelsCount} relationships and ${deletedNodesCount} nodes.`);
 
     console.log('Splitting and executing Cypher statements sequentially...');
     const statements = seedCypher
@@ -143,6 +172,7 @@ async function seed() {
   } finally {
     await session.close();
     await neoDriver.close();
+    process.exit(0);
   }
 }
 

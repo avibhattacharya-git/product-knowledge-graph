@@ -1,7 +1,7 @@
-import 'dotenv/config';
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
 import QueryStream from 'pg-query-stream';
-import neo4j, { Driver, Session } from 'neo4j-driver';
+import neo4j, { Driver } from 'neo4j-driver';
+import { appConfig } from '../configs/app.config';
 
 // Blueprint for complementary category accessories
 const complementaryCategories: Record<string, string[]> = {
@@ -49,15 +49,18 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<IngestionStats> {
-  const startTime = Date.now();
-  console.log('\n======================================================');
-  console.log('  STARTING ENTERPRISE-SCALE NEO4J PIPELINE (3.46M GPs)  ');
-  console.log('======================================================\n');
+export class EtlService {
+  constructor(private pgPool: Pool, private neoDriver: Driver) {}
 
-  const pgClient = await pgPool.connect();
-  const session = neoDriver.session({ defaultAccessMode: neo4j.session.WRITE });
-  const apiKey = process.env.GEMINI_API_KEY;
+  async runPipeline(): Promise<IngestionStats> {
+    const startTime = Date.now();
+    console.log('\n======================================================');
+    console.log('  STARTING ENTERPRISE-SCALE NEO4J PIPELINE (3.46M GPs)  ');
+    console.log('======================================================\n');
+
+    const pgClient = await this.pgPool.connect();
+    const session = this.neoDriver.session({ defaultAccessMode: neo4j.session.WRITE });
+    const apiKey = appConfig.geminiApiKey;
 
   try {
     // 1. Clear out Neo4j graph completely (Failsafe DBA Two-Phase Batch Truncation)
@@ -118,7 +121,7 @@ export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<Inge
     console.log('\nExtracting active categories from product_categories_search_mv...');
     const catRes = await pgClient.query(`
       SELECT id, name, parent_category_id, category_taxonomy, category_level 
-      FROM product_categories_search_mv
+      FROM ${appConfig.pgViews.categories}
       WHERE embedding IS NOT NULL
     `);
     console.log(`Loaded ${catRes.rows.length} categories.`);
@@ -167,7 +170,7 @@ export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<Inge
     console.log('\nExtracting active brand profiles from brands_search_mv...');
     const brandRes = await pgClient.query(`
       SELECT id, name, private_label, source, manufacturer_id, manufacturer_name
-      FROM brands_search_mv
+      FROM ${appConfig.pgViews.brands}
       WHERE embedding IS NOT NULL
     `);
     console.log(`Loaded ${brandRes.rows.length} active brands.`);
@@ -258,7 +261,7 @@ export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<Inge
     const catCandidateQuery = `
       WITH dept_categories AS (
         SELECT id, name, embedding 
-        FROM product_categories_search_mv
+        FROM ${appConfig.pgViews.categories}
         WHERE embedding IS NOT NULL 
           AND (category_level = 2 OR category_level = 1)
       ),
@@ -317,8 +320,8 @@ export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<Inge
 
     // E. Evaluate uncached candidate pairs using batched Gemini API Judge with robust rate limiting & exponential backoffs
     if (uncachedCatCandidates.length > 0) {
-      if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-        console.warn('Gemini API Key missing in env, defaulting all uncached category pairs to NONE...');
+      if (!apiKey) {
+        console.warn('Gemini API Key missing or mock, defaulting all uncached category pairs to NONE...');
       } else {
         console.log(`Starting batched LLM category evaluations for ${uncachedCatCandidates.length} pairs...`);
         
@@ -398,7 +401,7 @@ ${JSON.stringify(promptPayload, null, 2)}
               const rawText = resData.candidates[0].content.parts[0].text;
               const judgments = JSON.parse(rawText.trim());
 
-              const cacheQueries = [];
+              const cacheQueries: Promise<any>[] = [];
               batch.forEach((item, idx) => {
                 const id = `pair_${idx}`;
                 const type = String(judgments[id] || 'NONE').toUpperCase().trim();
@@ -421,7 +424,6 @@ ${JSON.stringify(promptPayload, null, 2)}
             }
           } catch (err: any) {
             console.error(`[Category LLM Judge] CRITICAL ERROR: Failed to process batch of size ${batch.length} after all retries:`, err.message);
-            // Crucial safe fallback: do NOT write to cache table so these pairs remain uncached and can be healed/retried on the next run!
           }
         };
 
@@ -463,7 +465,7 @@ ${JSON.stringify(promptPayload, null, 2)}
     if (involvedCatIdsSet.size > 0) {
       console.log(`Fetching embeddings for ${involvedCatIdsSet.size} categories to compute similarities...`);
       const catEmbRes = await pgClient.query(`
-        SELECT id, embedding FROM product_categories_search_mv 
+        SELECT id, embedding FROM ${appConfig.pgViews.categories} 
         WHERE id = ANY($1) AND embedding IS NOT NULL
       `, [Array.from(involvedCatIdsSet)]);
       catEmbRes.rows.forEach(row => {
@@ -558,21 +560,20 @@ ${JSON.stringify(promptPayload, null, 2)}
         b2.name AS brand2_name,
         cat.name AS shared_category_name,
         b2.distance
-      FROM brands_search_mv b1
+      FROM ${appConfig.pgViews.brands} b1
       CROSS JOIN LATERAL (
         SELECT 
           b2_inner.id,
           b2_inner.name,
-          m2.category_id,
           (b1.embedding <=> b2_inner.embedding) AS distance
-        FROM brands_search_mv b2_inner
-        JOIN brand_category_map_mv m1 ON m1.brand_id = b1.id
-        JOIN brand_category_map_mv m2 ON m2.brand_id = b2_inner.id AND m2.category_id = m1.category_id
+        FROM ${appConfig.pgViews.brands} b2_inner
         WHERE b2_inner.id <> b1.id AND b2_inner.embedding IS NOT NULL
         ORDER BY b1.embedding <=> b2_inner.embedding ASC
-        LIMIT 4
+        LIMIT 15
       ) b2
-      JOIN product_categories_search_mv cat ON cat.id = b2.category_id
+      JOIN ${appConfig.pgViews.brandCategory} m1 ON m1.brand_id = b1.id
+      JOIN ${appConfig.pgViews.brandCategory} m2 ON m2.brand_id = b2.id AND m2.category_id = m1.category_id
+      JOIN ${appConfig.pgViews.categories} cat ON cat.id = m2.category_id
       WHERE b1.embedding IS NOT NULL
     `;
     const candidateRes = await pgClient.query(candidateQuery);
@@ -607,9 +608,9 @@ ${JSON.stringify(promptPayload, null, 2)}
 
     // E. Evaluate uncached candidate pairs using batched Gemini API Judge with rate limiting & exponential backoff
     if (uncachedCandidates.length > 0) {
-      if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-        console.warn('Gemini API Key missing in env, defaulting all uncached candidate pairs to COMPETES = TRUE...');
-        const insertQueries = [];
+      if (!apiKey) {
+        console.warn('Gemini API Key missing or mock, defaulting all uncached candidate pairs to COMPETES = TRUE...');
+        const insertQueries: Promise<any>[] = [];
         for (const pair of uncachedCandidates) {
           insertQueries.push(pgClient.query(
             `INSERT INTO brand_competitor_judgments (brand1_id, brand2_id, competes) 
@@ -650,8 +651,8 @@ ${JSON.stringify(promptPayload, null, 2)}
           }
         };
 
-        const batchSize = 50;
-        const maxConcurrency = 5;
+        const batchSize = 100;
+        const maxConcurrency = 1;
         
         const processBatch = async (batch: any[]) => {
           const promptPayload = batch.map((item, idx) => ({
@@ -678,7 +679,7 @@ Input:
 ${JSON.stringify(promptPayload, null, 2)}
 `;
 
-          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
           
           try {
             const resData = await fetchWithBackoff(geminiUrl, {
@@ -696,37 +697,43 @@ ${JSON.stringify(promptPayload, null, 2)}
               const rawText = resData.candidates[0].content.parts[0].text;
               const judgments = JSON.parse(rawText.trim());
 
-              const cacheQueries = [];
+              const values: any[] = [];
+              const valuePlaceholders: string[] = [];
               batch.forEach((item, idx) => {
                 const id = `pair_${idx}`;
                 const competes = judgments[id] === true;
-                
-                cacheQueries.push(pgClient.query(
-                  `INSERT INTO brand_competitor_judgments (brand1_id, brand2_id, competes) 
-                   VALUES ($1, $2, $3) ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
-                  [item.brand1_id, item.brand2_id, competes]
-                ));
+                const offset = idx * 3;
+                valuePlaceholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
+                values.push(item.brand1_id, item.brand2_id, competes);
 
                 if (competes) {
                   competitorsToLoad.push({ b1: item.brand1_id, b2: item.brand2_id, similarity: 0.90 });
                 }
               });
 
-              await Promise.all(cacheQueries);
+              await pgClient.query(
+                `INSERT INTO brand_competitor_judgments (brand1_id, brand2_id, competes) 
+                 VALUES ${valuePlaceholders.join(', ')} 
+                 ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
+                values
+              );
             }
           } catch (err: any) {
             console.error(`[LLM Judge] Failed to process batch of size ${batch.length}:`, err.message);
             // Fallback on failure: default to TRUE to be safe and avoid losing candidate connections
-            const cacheQueries = [];
-            batch.forEach(item => {
-              cacheQueries.push(pgClient.query(
-                `INSERT INTO brand_competitor_judgments (brand1_id, brand2_id, competes) 
-                 VALUES ($1, $2, $3) ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
-                [item.brand1_id, item.brand2_id, true]
-              ));
+            const values: any[] = [];
+            const valuePlaceholders: string[] = [];
+            batch.forEach((item, idx) => {
+              const offset = idx * 3;
+              valuePlaceholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
+              values.push(item.brand1_id, item.brand2_id, true);
               competitorsToLoad.push({ b1: item.brand1_id, b2: item.brand2_id, similarity: 0.90 });
             });
-            await Promise.all(cacheQueries);
+            await pgClient.query(
+              `INSERT INTO brand_competitor_judgments (brand1_id, brand2_id, competes) 
+               VALUES ${valuePlaceholders.join(', ')} ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
+              values
+            );
           }
         };
 
@@ -767,7 +774,7 @@ ${JSON.stringify(promptPayload, null, 2)}
     if (involvedBrandIdsSet.size > 0) {
       console.log(`Fetching embeddings for ${involvedBrandIdsSet.size} brands to compute similarities...`);
       const brandEmbRes = await pgClient.query(`
-        SELECT id, embedding FROM brands_search_mv 
+        SELECT id, embedding FROM ${appConfig.pgViews.brands} 
         WHERE id = ANY($1) AND embedding IS NOT NULL
       `, [Array.from(involvedBrandIdsSet)]);
       brandEmbRes.rows.forEach(row => {
@@ -807,7 +814,7 @@ ${JSON.stringify(promptPayload, null, 2)}
     // Core high-performance SQL query mapping only active, embedded brand/categories
     const sql = `
       SELECT id, name, msrp, brand_id, brand_name, product_id_value, validation_state, direct_category_ids, source, item_size, item_measure 
-      FROM global_products_search_mv 
+      FROM ${appConfig.pgViews.products} 
       WHERE (validation_state IS NULL OR validation_state != 'INVALID')
     `;
 
@@ -829,7 +836,7 @@ ${JSON.stringify(promptPayload, null, 2)}
       mfg: any[],
       belongs: any[]
     ): Promise<void> => {
-      const writeSession = neoDriver.session({ defaultAccessMode: neo4j.session.WRITE });
+      const writeSession = this.neoDriver.session({ defaultAccessMode: neo4j.session.WRITE });
       try {
         await writeSession.executeWrite(async tx => {
           // A. Merge Product nodes
@@ -968,42 +975,9 @@ ${JSON.stringify(promptPayload, null, 2)}
     await session.close();
   }
 }
-
-if (process.argv[1] && (process.argv[1].endsWith('etl.ts') || process.argv[1].endsWith('etl'))) {
-  console.log('Detected direct script execution. Running standalone ETL pipeline...');
-  const pgPool = new Pool({
-    host: process.env.PG_HOST || 'localhost',
-    port: parseInt(process.env.PG_PORT || '5432'),
-    user: process.env.PG_USER || 'postgres',
-    password: process.env.PG_PASSWORD || 'postgres',
-    database: process.env.PG_DATABASE || 'ProductData',
-    max: 10,
-  });
-
-  const neoDriver = neo4j.driver(
-    process.env.NEO4J_URI || 'bolt://localhost:7687',
-    neo4j.auth.basic(
-      process.env.NEO4J_USER || 'neo4j',
-      process.env.NEO4J_PASSWORD || 'retailpassword123'
-    ),
-    {
-      maxConnectionPoolSize: 50,
-      connectionTimeout: 10000,
-    }
-  );
-
-  runPipeline(pgPool, neoDriver)
-    .then(async (stats) => {
-      console.log('ETL Pipeline succeeded standalone!', stats);
-      await pgPool.end();
-      await neoDriver.close();
-      process.exit(0);
-    })
-    .catch(async (err) => {
-      console.error('ETL Pipeline failed standalone:', err);
-      await pgPool.end();
-      await neoDriver.close();
-      process.exit(1);
-    });
 }
 
+export async function runPipeline(pgPool: Pool, neoDriver: Driver): Promise<IngestionStats> {
+  const service = new EtlService(pgPool, neoDriver);
+  return service.runPipeline();
+}

@@ -20,6 +20,20 @@ services:
       - ./neo4j/plugins:/plugins
     restart: always
 
+  neo4j-mock:
+    image: neo4j:5.18.0-community
+    container_name: product-data-neo4j-mock
+    ports:
+      - "7475:7474" # HTTP Browser Console for Mock
+      - "7688:7687" # Bolt binary driver protocol for Mock
+    environment:
+      - NEO4J_AUTH=neo4j/retailpassword123
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_server_memory_heap_initial__size=1G
+      - NEO4J_server_memory_heap_max__size=2G
+      - NEO4J_server_memory_pagecache_size=1G
+    restart: always
+
   postgres:
     image: pgvector/pgvector:pg18
     container_name: product-data-postgres
