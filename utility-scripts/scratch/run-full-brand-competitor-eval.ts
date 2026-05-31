@@ -152,6 +152,7 @@ async function runFullBrandCompetitorEval() {
               await new Promise(r => setTimeout(r, delay));
             }
           }
+          throw new Error(`Gemini API call failed after ${maxRetries} attempts due to rate-limiting or network issues.`);
         };
 
         const batchSize = 100;
@@ -191,7 +192,7 @@ ${JSON.stringify(promptPayload, null, 2)}
               })
             });
 
-            if (resData.candidates && resData.candidates.length > 0) {
+            if (resData && resData.candidates && resData.candidates.length > 0) {
               const rawText = resData.candidates[0].content.parts[0].text;
               const judgments = JSON.parse(rawText.trim());
 
@@ -212,27 +213,17 @@ ${JSON.stringify(promptPayload, null, 2)}
                  ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
                 values
               );
+            } else {
+              throw new Error('Malformed API response: no candidates returned');
             }
           } catch (err: any) {
-            console.error(`[LLM Judge] Failed to process batch of size ${batch.length}:`, err.message);
-            // Default fallback batched insert
-            const values: any[] = [];
-            const valuePlaceholders: string[] = [];
-            batch.forEach((item, idx) => {
-              const offset = idx * 3;
-              valuePlaceholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
-              values.push(item.brand1_id, item.brand2_id, true);
-            });
-            await pgClient.query(
-              `INSERT INTO brand_competitor_judgments (brand1_id, brand2_id, competes) 
-               VALUES ${valuePlaceholders.join(', ')} ON CONFLICT (brand1_id, brand2_id) DO NOTHING`,
-              values
-            );
+            console.error(`[LLM Judge] Failed to process batch of size ${batch.length}: ${err.message}. Skipping database insert for this batch.`);
+            // No fallback insert! We do not write anything to PostgreSQL for this batch, so they remain uncached.
           }
         };
 
         const totalBatches = Math.ceil(uniqueUncached.length / batchSize);
-        const concurrencyLimit = 30;
+        const concurrencyLimit = 12;
         console.log(`Divided into ${totalBatches} batches of size ${batchSize}. Executing with concurrency limit ${concurrencyLimit} to ensure speed and rate safety...`);
 
         let batchIndex = 0;
