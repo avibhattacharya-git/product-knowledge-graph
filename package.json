@@ -5,8 +5,8 @@
   "main": "main.ts",
   "type": "module",
   "scripts": {
-    "start": "tsx main.ts",
-    "ingest": "tsx etl.ts",
+    "start": "bun main.ts",
+    "ingest": "bun etl.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

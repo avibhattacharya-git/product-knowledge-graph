@@ -2,8 +2,7 @@ import 'dotenv/config';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { serve } from '@hono/node-server';
-import { serveStatic } from '@hono/node-server/serve-static';
+import { serveStatic } from 'hono/bun';
 import { Pool } from 'pg';
 import neo4j from 'neo4j-driver';
 import {
@@ -102,8 +101,8 @@ console.log(`\n======================================================`);
 console.log(`  Hono API Server listening on port ${process.env.PORT || 3000}`);
 console.log(`======================================================\n`);
 
-// Start server on Node.js using Hono Node Server
-serve({
-  fetch: app.fetch,
-  port: parseInt(process.env.PORT || '3000')
-});
+// Start server natively on Bun by exporting app configurations
+export default {
+  port: parseInt(process.env.PORT || '3000'),
+  fetch: app.fetch
+};
