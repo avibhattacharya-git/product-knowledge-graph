@@ -29,8 +29,8 @@ export class SearchOrchestrator {
     return this.graphService.globalKeywordSearch(q);
   }
 
-  async processNLQ(question: string): Promise<NLQResultDTO> {
-    return this.nlqService.processNLQQuery(question);
+  async processNLQ(question: string, overrideModel?: string): Promise<NLQResultDTO> {
+    return this.nlqService.processNLQQuery(question, overrideModel);
   }
 
   async getAutocomplete(q: string): Promise<AutocompleteSuggestionDTO[]> {

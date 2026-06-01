@@ -178,7 +178,7 @@ describe('US Retailer Product Knowledge Graph - Hono Route & Controller Unit Tes
       body: JSON.stringify({ question: 'List all sodas' })
     });
     expect(resGood.status).toBe(200);
-    expect(mockSearchOrchestrator.processNLQ).toHaveBeenCalledWith('List all sodas');
+    expect(mockSearchOrchestrator.processNLQ).toHaveBeenCalledWith('List all sodas', undefined);
   });
 
   test('POST /api/ingest executes high-performance ETL pipeline', async () => {

@@ -138,7 +138,7 @@ describe('US Retailer Product Knowledge Graph - Core Services Unit Tests', () =>
     expect(mockNlqService.processNLQQuery).toHaveBeenCalledTimes(1);
   });
 
-  test('EtlOrchestrator delegates cleanly to EtlService', async () => {
+  test('EtlOrchestrator delegates cleanly to EtlService for standard run', async () => {
     const mockEtlService = {
       runPipeline: mock(() => Promise.resolve({
         products: 10,
@@ -156,5 +156,45 @@ describe('US Retailer Product Knowledge Graph - Core Services Unit Tests', () =>
     const stats = await orchestrator.runIngestion();
     expect(stats.brands).toBe(100);
     expect(mockEtlService.runPipeline).toHaveBeenCalledTimes(1);
+  });
+
+  test('EtlOrchestrator coordinates selective pipeline runs with granular stages', async () => {
+    const mockEtlService = {
+      truncateDatabase: mock(() => Promise.resolve({ deletedRels: 100, deletedNodes: 50 })),
+      verifySchemaConstraints: mock(() => Promise.resolve()),
+      ingestCategoryTopology: mock(() => Promise.resolve({ categories: 3, parentLinksCount: 2 })),
+      ingestCategoryRelationships: mock(() => Promise.resolve({ complements: 5, substitutes: 4 })),
+      ingestBrandTopology: mock(() => Promise.resolve({ brands: 10, manufacturers: 2, ownedLinksCount: 8 })),
+      ingestBrandRelationships: mock(() => Promise.resolve({ competitors: 12 })),
+      streamProductCatalog: mock(() => Promise.resolve({ products: 15, relationships: 30 }))
+    } as any;
+
+    const orchestrator = new EtlOrchestrator(mockEtlService);
+
+    const options = {
+      truncate: true,
+      schema: true,
+      categories: true,
+      brands: true,
+      products: true,
+      relationships: true
+    };
+
+    const stats = await orchestrator.runSelectivePipeline(options);
+
+    expect(stats.categories).toBe(3);
+    expect(stats.brands).toBe(10);
+    expect(stats.manufacturers).toBe(2);
+    expect(stats.products).toBe(15);
+    // relationships = parentLinksCount (2) + complements*2 (10) + substitutes*2 (8) + ownedLinksCount (8) + competitors*2 (24) + products.relationships (30) = 82
+    expect(stats.relationships).toBe(82);
+
+    expect(mockEtlService.truncateDatabase).toHaveBeenCalledTimes(1);
+    expect(mockEtlService.verifySchemaConstraints).toHaveBeenCalledTimes(1);
+    expect(mockEtlService.ingestCategoryTopology).toHaveBeenCalledTimes(1);
+    expect(mockEtlService.ingestCategoryRelationships).toHaveBeenCalledTimes(1);
+    expect(mockEtlService.ingestBrandTopology).toHaveBeenCalledTimes(1);
+    expect(mockEtlService.ingestBrandRelationships).toHaveBeenCalledTimes(1);
+    expect(mockEtlService.streamProductCatalog).toHaveBeenCalledTimes(1);
   });
 });

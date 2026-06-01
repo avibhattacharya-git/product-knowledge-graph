@@ -659,8 +659,8 @@ body {
 .node-circle.Category { fill: hsl(290, 85%, 60%); filter: drop-shadow(0 0 6px rgba(217, 70, 239, 0.3)); }
 
 .node-icon-text {
-  font-family: 'Font Awesome 6 Free';
-  font-weight: 900;
+  font-family: var(--font-display), 'Outfit', 'Inter', system-ui, sans-serif;
+  font-weight: 800;
   fill: #fff;
   font-size: 11px;
   text-anchor: middle;
@@ -1662,4 +1662,76 @@ body {
   100% { transform: scale(1); filter: drop-shadow(0 0 2px rgba(234, 179, 8, 0.3)); }
 }
 
+/* Premium Model Selection Dropdown Styling */
+.model-select-container {
+  margin-top: 14px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
+.model-select-container label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-select-container select {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.model-select-container select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.model-select-container select option {
+  background: #0f111a;
+  color: #fff;
+}
+
+/* Sidebar Legend Initials Badges */
+.legend-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-family: var(--font-display), 'Outfit', 'Inter', system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+  margin-right: 6px;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+  vertical-align: middle;
+}
+
+.legend-product {
+  background: var(--primary);
+  box-shadow: 0 0 6px var(--primary-glow);
+}
+
+.legend-brand {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.legend-category {
+  background: hsl(290, 85%, 60%);
+  box-shadow: 0 0 6px rgba(217, 70, 239, 0.3);
+}

@@ -36,11 +36,12 @@ let svg, g, simulation, zoomBehavior;
 const width = window.innerWidth;
 const height = window.innerHeight;
 
-// Icons mapping for FontAwesome in SVG rendering
+// Initials mapping for centered node icons
 const iconMap = {
-  Product: '\uf0ab',       /* fa-box */
-  Brand: '\uf1f9',         /* fa-copyright */
-  Category: '\uf02c'       /* fa-tags */
+  Product: 'GP',
+  Brand: 'B',
+  Category: 'C',
+  Manufacturer: 'M'
 };
 
 // Colors matching the Design System HSL
@@ -49,6 +50,18 @@ const colorMap = {
   Brand: 'hsl(184, 90%, 45%)',
   Category: 'hsl(290, 85%, 60%)'
 };
+
+// Helper to extract node type/label defensively and map to system-supported filter keys
+function getNodeType(node) {
+  if (!node || !node.labels || node.labels.length === 0) return 'Product';
+  const rawLabel = node.labels[0];
+  if (typeof rawLabel !== 'string') return 'Product';
+  const lower = rawLabel.toLowerCase();
+  if (lower === 'brand') return 'Brand';
+  if (lower === 'category') return 'Category';
+  if (lower === 'product') return 'Product';
+  return rawLabel;
+}
 
 // 2. Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
@@ -91,20 +104,52 @@ async function checkDatabasesStatus() {
       neoInd.className = 'status-indicator offline';
     }
 
-    // Gemini status
+    // Gemini/LLM status
     const geminiInd = document.getElementById('gemini-indicator');
-    if (data.gemini) {
-      const isLlmActive = data.gemini.apiKeyPresent && data.gemini.nlqEnabled;
+    const llm = data.llm || (data.gemini ? {
+      activeProvider: 'gemini',
+      apiKeyPresent: data.gemini.apiKeyPresent,
+      nlqEnabled: data.gemini.nlqEnabled,
+      providers: {
+        gemini: { nlqModel: 'gemini-3.5-flash' },
+        openai: { nlqModel: 'gpt-5.5' },
+        anthropic: { nlqModel: 'claude-opus-4-8' }
+      }
+    } : null);
+
+    if (llm) {
+      const isLlmActive = llm.apiKeyPresent && llm.nlqEnabled;
       state.geminiEnabled = isLlmActive;
       
       if (geminiInd) {
+        const providerName = llm.activeProvider.toUpperCase();
         if (isLlmActive) {
-          geminiInd.textContent = 'ONLINE';
+          geminiInd.textContent = `${providerName} ONLINE`;
           geminiInd.className = 'status-indicator online';
         } else {
-          geminiInd.textContent = 'DISABLED';
+          geminiInd.textContent = `${providerName} DISABLED`;
           geminiInd.className = 'status-indicator warning';
         }
+      }
+
+      // Dynamically populate model selection dropdown based on configured models
+      const modelSelect = document.getElementById('nlq-model-select');
+      if (modelSelect && llm.providers) {
+        const geminiModel = llm.providers.gemini.nlqModel;
+        const openaiModel = llm.providers.openai.nlqModel;
+        const anthropicModel = llm.providers.anthropic.nlqModel;
+        
+        modelSelect.innerHTML = `
+          <option value="${geminiModel}">Gemini: ${geminiModel}</option>
+          <option value="${openaiModel}">OpenAI: ${openaiModel} (Premium)</option>
+          <option value="gpt-4o-mini">OpenAI: gpt-4o-mini (Fast)</option>
+          <option value="${anthropicModel}">Anthropic: ${anthropicModel} (Premium)</option>
+          <option value="claude-haiku-4-5-20251001">Anthropic: claude-haiku-4-5 (Fast)</option>
+        `;
+        
+        // Select active provider's model by default
+        const defaultModel = llm.providers[llm.activeProvider].nlqModel;
+        modelSelect.value = defaultModel;
       }
     } else {
       state.geminiEnabled = false;
@@ -199,12 +244,14 @@ async function fetchGraphData() {
 
 // 4. Ingestion Filter & Render Loop
 function applyGraphFilters() {
+  const getLinkId = (endpoint) => (endpoint && typeof endpoint === 'object') ? endpoint.id : endpoint;
+
   // A. Node Filtering
   state.filteredNodes = state.allNodes.filter(node => {
-    const label = node.labels[0] || 'Product';
+    const label = getNodeType(node);
     
     // Check type toggle
-    if (!state.filters[label]) return false;
+    if (state.filters[label] !== undefined && !state.filters[label]) return false;
 
     // Check search term query
     if (state.activeSearchQuery) {
@@ -217,21 +264,25 @@ function applyGraphFilters() {
 
     // Check Category Explorer focus path
     if (state.activeCategoryFilterId && label === 'Product') {
-      const belongs = state.allLinks.some(link => 
-        link.source === node.id && 
-        link.type === 'BELONGS_TO' && 
-        link.target === state.activeCategoryFilterId
-      );
+      const belongs = state.allLinks.some(link => {
+        const srcId = getLinkId(link.source);
+        const tgtId = getLinkId(link.target);
+        return srcId === node.id && 
+               link.type === 'BELONGS_TO' && 
+               tgtId === state.activeCategoryFilterId;
+      });
       if (!belongs) return false;
     }
 
     // Check Brand Explorer focus path
     if (state.activeBrandFilterId && label === 'Product') {
-      const manufactures = state.allLinks.some(link => 
-        link.source === node.id && 
-        link.type === 'MANUFACTURED_BY' && 
-        link.target === state.activeBrandFilterId
-      );
+      const manufactures = state.allLinks.some(link => {
+        const srcId = getLinkId(link.source);
+        const tgtId = getLinkId(link.target);
+        return srcId === node.id && 
+               link.type === 'MANUFACTURED_BY' && 
+               tgtId === state.activeBrandFilterId;
+      });
       if (!manufactures) return false;
     }
 
@@ -242,7 +293,9 @@ function applyGraphFilters() {
   const nodeIds = new Set(state.filteredNodes.map(n => n.id));
   state.filteredLinks = state.allLinks.filter(link => {
     // Both endpoints must exist in active node set
-    if (!nodeIds.has(link.source) || !nodeIds.has(link.target)) return false;
+    const srcId = getLinkId(link.source);
+    const tgtId = getLinkId(link.target);
+    if (!nodeIds.has(srcId) || !nodeIds.has(tgtId)) return false;
     // Check relationship class checkbox
     if (link.type in state.relFilters && !state.relFilters[link.type]) return false;
     return true;
@@ -285,13 +338,13 @@ function renderGraph() {
 
   // Circle background
   node.append('circle')
-    .attr('class', d => `node-circle ${d.labels[0] || 'Product'}`)
+    .attr('class', d => `node-circle ${getNodeType(d)}`)
     .attr('r', 15);
 
   // Centered Icon Character
   node.append('text')
     .attr('class', 'node-icon-text')
-    .text(d => iconMap[d.labels[0] || 'Product']);
+    .text(d => iconMap[getNodeType(d)] || '\uf0ab');
 
   // Label text under circle
   node.append('text')
@@ -325,15 +378,18 @@ function renderGraph() {
 
 // 5. Dynamic Node Interactive Focus Details
 function highlightNodeNeighbors(focusedNode) {
+  const getLinkId = (endpoint) => (endpoint && typeof endpoint === 'object') ? endpoint.id : endpoint;
   const connectedNodeIds = new Set([focusedNode.id]);
   const connectedEdgeIds = new Set();
 
   state.filteredLinks.forEach(link => {
-    if (link.source.id === focusedNode.id) {
-      connectedNodeIds.add(link.target.id);
+    const srcId = getLinkId(link.source);
+    const tgtId = getLinkId(link.target);
+    if (srcId === focusedNode.id) {
+      connectedNodeIds.add(tgtId);
       connectedEdgeIds.add(link.id);
-    } else if (link.target.id === focusedNode.id) {
-      connectedNodeIds.add(link.source.id);
+    } else if (tgtId === focusedNode.id) {
+      connectedNodeIds.add(srcId);
       connectedEdgeIds.add(link.id);
     }
   });
@@ -370,7 +426,7 @@ function selectNode(node) {
   defaultMsg.classList.add('hide');
   content.classList.remove('hide');
 
-  const label = node.labels[0] || 'Product';
+  const label = getNodeType(node);
   document.getElementById('node-type-label').className = `node-type-tag ${label}`;
   document.getElementById('node-type-label').textContent = label;
   document.getElementById('node-name-label').textContent = node.properties.name || node.id;
@@ -378,14 +434,38 @@ function selectNode(node) {
   // Setup Subtitle Info
   const subLabel = document.getElementById('node-subtitle-label');
   if (label === 'Product') {
-    // Try to find the brand manufacture relation to show
-    const mfgLink = state.allLinks.find(link => link.source === node.id && link.type === 'MANUFACTURED_BY');
+    // Try to find the brand manufacture relation to show (defensively check for string or object in D3 simulation)
+    const mfgLink = state.allLinks.find(link => {
+      const srcId = (link.source && typeof link.source === 'object') ? link.source.id : link.source;
+      return srcId === node.id && link.type === 'MANUFACTURED_BY';
+    });
     let brandName = 'Generic Brand';
     if (mfgLink) {
-      const brandNode = state.allNodes.find(n => n.id === mfgLink.target);
-      brandName = brandNode ? brandNode.properties.name : mfgLink.target;
+      const tgtId = (mfgLink.target && typeof mfgLink.target === 'object') ? mfgLink.target.id : mfgLink.target;
+      const brandNode = state.allNodes.find(n => n.id === tgtId);
+      brandName = brandNode ? brandNode.properties.name : tgtId;
     }
     subLabel.textContent = `Brand: ${brandName}`;
+
+    // Fetch live product details to resolve the "Generic Brand" fallback and enrich metadata
+    const productId = node.properties?.id || node.id;
+    fetch(`/api/products/${productId}`)
+      .then(res => res.json())
+      .then(data => {
+        const currentSelectedId = state.selectedNode?.properties?.id || state.selectedNode?.id;
+        if (currentSelectedId === productId) {
+          if (data && data.brand && data.brand.name) {
+            subLabel.textContent = `Brand: ${data.brand.name}`;
+          } else {
+            subLabel.textContent = 'Brand: Generic Brand';
+          }
+          // Enrich metadata grid with latest server-side database details
+          compileProductMetadata(node, data);
+        }
+      })
+      .catch(err => {
+        console.error('Error fetching dynamic product details:', err);
+      });
   } else {
     subLabel.textContent = `Unique Graph ID: ${node.id}`;
   }
@@ -426,18 +506,25 @@ function selectNode(node) {
 }
 
 // Compile Product Catalog Metadata
-function compileProductMetadata(productNode) {
+function compileProductMetadata(productNode, fetchedData = null) {
   const grid = document.getElementById('product-metadata-grid');
   grid.innerHTML = '';
 
-  const props = productNode.properties;
+  const props = productNode.properties || {};
+  const data = fetchedData || {};
 
-  const msrpVal = parseFloat(props.price || 0);
+  const priceVal = data.price !== undefined ? data.price : props.price;
+  const gtinVal = data.gtin || props.gtin;
+  const sizeVal = data.size !== undefined ? data.size : props.size;
+  const measureVal = data.measure || props.measure;
+  const valState = data.validationState || props.validationState;
+
+  const msrpVal = parseFloat(priceVal || 0);
   const items = [
     { name: 'MSRP', val: msrpVal > 0 ? `$${msrpVal.toFixed(2)}` : 'N/A' },
-    { name: 'GTIN14 / SKU', val: props.gtin || 'N/A' },
-    { name: 'Package Size', val: props.size ? `${props.size} ${props.measure || ''}` : 'N/A' },
-    { name: 'Validation State', val: props.validationState || 'VALID' }
+    { name: 'GTIN14 / SKU', val: gtinVal || 'N/A' },
+    { name: 'Package Size', val: sizeVal ? `${sizeVal} ${measureVal || ''}` : 'N/A' },
+    { name: 'Validation State', val: valState || 'VALID' }
   ];
 
   items.forEach(item => {
@@ -531,7 +618,7 @@ async function fetchRelatedProductsIntelligence(productNode) {
 }
 
 // Helper to select and highlight a node by its ID from related lists
-function selectNodeFromId(nodeId) {
+async function selectNodeFromId(nodeId) {
   const targetNode = state.allNodes.find(n => n.id === nodeId || (n.properties && n.properties.id === nodeId));
   if (targetNode) {
     // Zoom/Center camera smoothly to this node on D3 canvas
@@ -546,7 +633,71 @@ function selectNodeFromId(nodeId) {
     svg.transition().duration(400).call(zoomBehavior.transform, transform);
     selectNode(targetNode);
   } else {
-    showToast('Product is in the database but currently not visible on active visual canvas context.', 'warning');
+    // 🚀 Dynamic Graph Expansion: Node is not on canvas, fetch its neighborhood in real-time!
+    showToast('Expanding graph visual network...', 'warning');
+    
+    try {
+      const isInternalId = !isNaN(Number(nodeId));
+      const cypher = `MATCH (n) WHERE n.id = "${nodeId}" OR id(n) = ${isInternalId ? Number(nodeId) : -1} OPTIONAL MATCH (n)-[r]-(m) RETURN n, r, m LIMIT 50`;
+      
+      const res = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: cypher })
+      });
+      
+      const data = await res.json();
+      if (!data.nodes || data.nodes.length === 0) {
+        showToast('Node not found in database.', 'error');
+        return;
+      }
+
+      // Merge new nodes into state.allNodes (avoid duplicates)
+      const existingNodeIds = new Set(state.allNodes.map(n => n.id));
+      const parent = svg.node().parentElement;
+      
+      // Position the new cluster starting at center, with some random scattering
+      data.nodes.forEach(n => {
+        if (!existingNodeIds.has(n.id)) {
+          n.x = parent.clientWidth / 2 + (Math.random() - 0.5) * 150;
+          n.y = parent.clientHeight / 2 + (Math.random() - 0.5) * 150;
+          state.allNodes.push(n);
+        }
+      });
+
+      // Merge new links into state.allLinks (avoid duplicates)
+      const existingLinkIds = new Set(state.allLinks.map(l => `${l.source}_${l.target}_${l.type}`));
+      data.links.forEach(l => {
+        const linkKey = `${l.source}_${l.target}_${l.type}`;
+        if (!existingLinkIds.has(linkKey)) {
+          state.allLinks.push(l);
+        }
+      });
+
+      // Trigger D3 graph updates and re-draw force layout
+      applyGraphFilters();
+      
+      // Zoom and center camera on the newly spawned node smoothly after D3 layout updates
+      setTimeout(() => {
+        const newlyFetchedNode = state.allNodes.find(n => n.id === nodeId || (n.properties && n.properties.id === nodeId));
+        if (newlyFetchedNode) {
+          const w = parent.clientWidth;
+          const h = parent.clientHeight;
+          
+          const transform = d3.zoomIdentity
+            .translate(w / 2 - newlyFetchedNode.x, h / 2 - newlyFetchedNode.y)
+            .scale(1.2);
+            
+          svg.transition().duration(400).call(zoomBehavior.transform, transform);
+          selectNode(newlyFetchedNode);
+          showToast(`Successfully expanded graph neighborhood to show ${newlyFetchedNode.properties?.name || 'node'}!`, 'success');
+        }
+      }, 350);
+
+    } catch (err) {
+      console.error('Failed to expand graph neighborhood dynamically:', err);
+      showToast('Ecosystem traversal failed.', 'error');
+    }
   }
 }
 
@@ -574,42 +725,88 @@ function compileGeneralProperties(node) {
   if (count === 0) {
     grid.innerHTML = `<div class="text-muted text-center">No metadata properties defined.</div>`;
   }
-}
-
-// Compile Ecosystem list of connections for Brand/Source/Category
-function compileEcosystemConnections(node) {
+}// Compile Ecosystem list of connections for Brand/Source/Category (Dynamic DB Fetch fallback)
+async function compileEcosystemConnections(node) {
   const list = document.getElementById('node-ecosystem-list');
-  list.innerHTML = '';
+  list.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Loading catalog products...</li>`;
 
-  const label = node.labels[0];
+  const label = getNodeType(node);
   const targetRel = label === 'Brand' ? 'MANUFACTURED_BY' : 'BELONGS_TO';
+  const getLinkId = (endpoint) => (endpoint && typeof endpoint === 'object') ? endpoint.id : endpoint;
 
-  const connections = state.allLinks.filter(link => 
-    link.target === node.id && link.type === targetRel
-  );
+  // 1. Try to find products already loaded on the active canvas
+  const connections = state.allLinks.filter(link => {
+    const tgtId = getLinkId(link.target);
+    return tgtId === node.id && link.type === targetRel;
+  });
 
-  if (connections.length === 0) {
-    list.innerHTML = `<li class="text-muted text-center py-2">No connected catalog products.</li>`;
+  if (connections.length > 0) {
+    list.innerHTML = '';
+    connections.forEach(link => {
+      const srcId = getLinkId(link.source);
+      const productNode = state.allNodes.find(n => n.id === srcId);
+      if (!productNode) return;
+      
+      const name = productNode.properties.name || srcId;
+      const priceVal = parseFloat(productNode.properties.price || 0);
+      const priceStr = priceVal > 0 ? ` ($${priceVal.toFixed(2)})` : '';
+
+      const li = document.createElement('li');
+      li.className = 'hover-item';
+      li.onclick = () => selectNode(productNode);
+      li.innerHTML = `
+        <span><i class="fa-solid fa-box text-primary mr-2"></i> ${name}</span>
+        <span class="text-muted">${priceStr} <i class="fa-solid fa-chevron-right"></i></span>
+      `;
+      list.appendChild(li);
+    });
     return;
   }
 
-  connections.forEach(link => {
-    const productNode = state.allNodes.find(n => n.id === link.source);
-    if (!productNode) return;
-    
-    const name = productNode.properties.name || link.source;
-    const priceVal = parseFloat(productNode.properties.price || 0);
-    const priceStr = priceVal > 0 ? ` ($${priceVal.toFixed(2)})` : '';
+  // 2. Fallback: Dynamically fetch connected products from the Neo4j database in real-time!
+  try {
+    const customId = node.properties?.id || node.id;
+    const isInternalId = !isNaN(Number(customId));
+    let cypher = '';
+    if (label === 'Brand') {
+      cypher = `MATCH (p:Product)-[r:MANUFACTURED_BY]->(b:Brand) WHERE b.id = "${customId}" OR id(b) = ${isInternalId ? Number(customId) : -1} RETURN p, r, b LIMIT 15`;
+    } else {
+      cypher = `MATCH (p:Product)-[r:BELONGS_TO]->(c:Category) WHERE c.id = "${customId}" OR id(c) = ${isInternalId ? Number(customId) : -1} RETURN p, r, c LIMIT 15`;
+    }
 
-    const li = document.createElement('li');
-    li.onclick = () => selectNode(productNode);
-    li.innerHTML = `
-      <span><i class="fa-solid fa-box text-primary mr-2"></i> ${name}</span>
-      <span class="text-muted">${priceStr} <i class="fa-solid fa-chevron-right"></i></span>
-    `;
-    list.appendChild(li);
-  });
-}
+    const res = await fetch('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: cypher })
+    });
+    const data = await res.json();
+    list.innerHTML = '';
+
+    const products = data.nodes?.filter(n => n.labels?.includes('Product')) || [];
+    if (products.length > 0) {
+      products.forEach(productNode => {
+        const name = productNode.properties.name || productNode.id;
+        const priceVal = parseFloat(productNode.properties.price || 0);
+        const priceStr = priceVal > 0 ? ` ($${priceVal.toFixed(2)})` : '';
+
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        // When clicking, dynamically load and expand this product's cluster on active D3 canvas!
+        li.onclick = () => selectNodeFromId(productNode.properties?.id || productNode.id);
+        li.innerHTML = `
+          <span><i class="fa-solid fa-box text-primary mr-2"></i> ${name}</span>
+          <span class="text-muted">${priceStr} <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        list.appendChild(li);
+      });
+    } else {
+      list.innerHTML = `<li class="text-muted text-center py-2">No connected catalog products.</li>`;
+    }
+  } catch (err) {
+    console.error('Failed to fetch dynamic ecosystem connections:', err);
+    list.innerHTML = `<li class="text-muted text-center py-2 text-danger">Failed to load catalog.</li>`;
+  }
+};
 
 // 7. Expandable Category Hierarchical Tree
 async function fetchCategoryHierarchy() {
@@ -680,7 +877,7 @@ function renderCategoryTree(categories) {
 
     const folderIcon = document.createElement('span');
     folderIcon.className = 'tree-folder-icon';
-    folderIcon.innerHTML = `<i class="fa-solid fa-folder"></i> `;
+    folderIcon.innerHTML = `<span class="legend-initial legend-category" style="width: 16px; height: 16px; font-size: 8px; border-radius: 3px; margin-right: 4px;">C</span>`;
     header.appendChild(folderIcon);
 
     const nameSpan = document.createElement('span');
@@ -832,6 +1029,9 @@ function bindUIEvents() {
     const warningAlert = document.getElementById('gemini-warning-alert');
     if (warningAlert) warningAlert.classList.add('hide');
 
+    const modelSelectBox = document.getElementById('model-select-box');
+    if (modelSelectBox) modelSelectBox.classList.add('hide');
+
     searchBarIcon.className = 'fa-solid fa-magnifying-glass search-inner-icon';
     searchInput.placeholder = 'Search products, brands, sources...';
     searchInput.value = state.activeSearchQuery;
@@ -848,16 +1048,21 @@ function bindUIEvents() {
     geminiPillsList.classList.remove('hide');
 
     const warningAlert = document.getElementById('gemini-warning-alert');
+    const modelSelectBox = document.getElementById('model-select-box');
+
     if (warningAlert) {
       if (!state.geminiEnabled) {
         warningAlert.classList.remove('hide');
+        if (modelSelectBox) modelSelectBox.classList.add('hide');
         searchInput.placeholder = "Ask fallback matcher: e.g. 'Louisiana Fish Fry'...";
       } else {
         warningAlert.classList.add('hide');
-        searchInput.placeholder = "Ask Gemini AI: e.g. 'Show Pepsi competitors'...";
+        if (modelSelectBox) modelSelectBox.classList.remove('hide');
+        searchInput.placeholder = "Ask AI Assistant: e.g. 'Show Pepsi competitors'...";
       }
     } else {
-      searchInput.placeholder = "Ask Gemini AI: e.g. 'Show Pepsi competitors'...";
+      if (modelSelectBox && state.geminiEnabled) modelSelectBox.classList.remove('hide');
+      searchInput.placeholder = "Ask AI Assistant: e.g. 'Show Pepsi competitors'...";
     }
     
     // Clear standard search filters during AI execution
@@ -975,21 +1180,29 @@ function bindUIEvents() {
     }
   }
 
-  // Core Gemini AI Search Traversal Caller
+  // Core AI Search Traversal Caller
   async function triggerGeminiAISearch(questionText) {
     loadingOverlay.classList.remove('hide');
-    showToast('Gemini is translating prompt to Cypher...', 'warning');
+    
+    // Get the selected model from UI dropdown
+    const modelSelect = document.getElementById('nlq-model-select');
+    const selectedModel = modelSelect ? modelSelect.value : null;
+
+    showToast(`AI is translating prompt using ${selectedModel || 'active model'}...`, 'warning');
 
     try {
       const res = await fetch('/api/nlq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: questionText })
+        body: JSON.stringify({ 
+          question: questionText,
+          model: selectedModel
+        })
       });
       const data = await res.json();
 
       if (res.ok) {
-        showToast(`Gemini successfully mapped ${data.nodes.length} nodes!`, 'success');
+        showToast(`AI successfully mapped ${data.nodes.length} nodes!`, 'success');
         
         // Load the new sub-graph into visual memory
         state.allNodes = data.nodes;
@@ -1013,11 +1226,11 @@ function bindUIEvents() {
           if (cypherExplanationText) cypherExplanationText.classList.add('hide');
         }
       } else {
-        showToast(`Gemini execution failed: ${data.error}`, 'error');
+        showToast(`AI execution failed: ${data.error}`, 'error');
         cypherPreviewBadge.classList.add('hide');
       }
     } catch (err) {
-      showToast('Network timeout connecting to Gemini AI service.', 'error');
+      showToast('Network timeout connecting to AI service.', 'error');
       cypherPreviewBadge.classList.add('hide');
     } finally {
       loadingOverlay.classList.add('hide');
@@ -1310,7 +1523,7 @@ function populateFormSelects() {
 
   sorted.forEach(node => {
     const name = node.properties.name || node.id;
-    const type = node.labels[0] || 'Product';
+    const type = getNodeType(node);
     const opt = `<option value="${node.id}">[${type}] ${name}</option>`;
     
     sourceSel.innerHTML += opt;
@@ -1399,7 +1612,7 @@ function renderBrandsList(brands) {
     };
 
     div.innerHTML = `
-      <span><i class="fa-solid fa-copyright text-accent mr-2"></i> ${b.name}</span>
+      <span><span class="legend-initial legend-brand" style="width: 16px; height: 16px; font-size: 8px; border-radius: 3px; margin-right: 4px;">B</span> ${b.name}</span>
       <span class="brand-item-meta">${b.productCount} Items</span>
     `;
 
@@ -1445,7 +1658,7 @@ async function fetchBrandCompetitorsIntelligence(brandNode) {
   container.classList.remove('hide');
 
   try {
-    const res = await fetch(`/api/brands/${brandNode.id}/competitors`);
+    const res = await fetch(`/api/brands/${brandNode.properties?.id || brandNode.id}/competitors`);
     const data = await res.json();
     list.innerHTML = '';
     
@@ -1480,7 +1693,7 @@ async function fetchCategoryRelationsIntelligence(categoryNode) {
   container.classList.remove('hide');
 
   try {
-    const res = await fetch(`/api/categories/${categoryNode.id}/related`);
+    const res = await fetch(`/api/categories/${categoryNode.properties?.id || categoryNode.id}/related`);
     const data = await res.json();
     subList.innerHTML = '';
     compList.innerHTML = '';

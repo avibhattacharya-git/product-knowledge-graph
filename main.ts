@@ -13,6 +13,7 @@ import { CategoryRepository } from './repository/category.repository';
 import { GraphRepository } from './repository/graph.repository';
 
 // Services
+import { LlmService } from './service/llm.service';
 import { EtlService } from './service/etl.service';
 import { ProductService } from './service/product.service';
 import { BrandService } from './service/brand.service';
@@ -32,17 +33,18 @@ import { EtlController } from './presentation/controllers/etl.controller';
 import { createApiRouter } from './presentation/routes/api.routes';
 
 // Instantiate DI singleton container bottom-up
+const llmService = new LlmService();
 const productRepo = new ProductRepository(pgPool, neoDriver);
 const brandRepo = new BrandRepository(neoDriver);
 const categoryRepo = new CategoryRepository(pgPool, neoDriver);
 const graphRepo = new GraphRepository(neoDriver);
 
-const etlService = new EtlService(pgPool, neoDriver);
+const etlService = new EtlService(pgPool, neoDriver, llmService);
 const productService = new ProductService(productRepo);
 const brandService = new BrandService(brandRepo);
 const categoryService = new CategoryService(categoryRepo);
 const graphService = new GraphService(graphRepo);
-const nlqService = new NlqService(graphRepo);
+const nlqService = new NlqService(graphRepo, llmService);
 
 const etlOrchestrator = new EtlOrchestrator(etlService);
 const searchOrchestrator = new SearchOrchestrator(

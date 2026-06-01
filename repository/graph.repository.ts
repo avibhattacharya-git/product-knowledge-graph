@@ -9,7 +9,13 @@ export class GraphRepository {
     const session = this.neoDriver.session();
     try {
       const cypher = `
-        MATCH (n)
+        CALL {
+          MATCH (p:Product) RETURN p AS n LIMIT 150
+          UNION
+          MATCH (b:Brand) RETURN b AS n LIMIT 80
+          UNION
+          MATCH (c:Category) RETURN c AS n LIMIT 50
+        }
         OPTIONAL MATCH (n)-[r]->(m)
         RETURN n, r, m LIMIT 800
       `;

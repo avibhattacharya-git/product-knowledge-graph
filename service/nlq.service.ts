@@ -3,6 +3,8 @@ import { appConfig } from '../configs/app.config';
 import { NLQResultDTO } from '../models/dto/graph.dto';
 import { GraphMapper } from '../repository/mappers/graph.mapper';
 
+import { LlmService } from './llm.service';
+
 export function generateFallbackCypher(q: string): { cypher: string, explanation: string } {
   const qLower = q.toLowerCase().trim();
   const keyStopwords = ['show', 'me', 'products', 'for', 'the', 'a', 'an', 'find', 'list', 'get', 'of', 'in', 'with', 'to', 'items', 'i', 'want', 'please', 'any'];
@@ -25,10 +27,21 @@ export function generateFallbackCypher(q: string): { cypher: string, explanation
 }
 
 export class NlqService {
-  constructor(private graphRepo: GraphRepository) {}
+  constructor(
+    private graphRepo: GraphRepository,
+    private llmService: LlmService
+  ) {}
 
-  async processNLQQuery(question: string): Promise<NLQResultDTO> {
-    const apiKey = appConfig.geminiApiKey;
+  async processNLQQuery(question: string, overrideModel?: string): Promise<NLQResultDTO> {
+    const provider = overrideModel
+      ? (overrideModel.startsWith('gpt') ? 'openai'
+        : overrideModel.startsWith('claude') ? 'anthropic'
+        : 'gemini')
+      : appConfig.llm.activeProvider;
+
+    const apiKey = provider === 'openai' ? appConfig.openAiApiKey
+      : provider === 'anthropic' ? appConfig.anthropicApiKey
+      : appConfig.geminiApiKey;
     
     let cypher = '';
     let explanation = '';
@@ -36,15 +49,16 @@ export class NlqService {
 
     if (!apiKey || !appConfig.llm.nlqEnabled) {
       // 💡 Graceful fallback keyword-mapping query parser
-      console.warn('Gemini API Key missing or explicitly disabled for NLQ, executing keyword-mapping parser fallback...');
+      console.warn(`LLM API Key missing or explicitly disabled for NLQ (${provider}), executing keyword-mapping parser fallback...`);
       const fallbackRes = generateFallbackCypher(question);
       cypher = fallbackRes.cypher;
       explanation = fallbackRes.explanation;
       usedFallback = true;
     } else {
-      // High-performance Gemini API Call
+      // High-performance Unified LlmService Call
       try {
-        console.log(`Sending prompt to Gemini AI Engine: "${question}"`);
+        const activeModel = overrideModel || appConfig.llm[provider].nlqModel;
+        console.log(`Sending prompt to ${provider} AI Engine using model ${activeModel}: "${question}"`);
         
         const systemPrompt = `You are a professional Cypher translator for a Retail Product Knowledge Graph.
 Given the following database schema:
@@ -82,33 +96,14 @@ Strict Translation Rules:
    - Brand-to-Brand: COMPETES_WITH.
    - Product-to-Brand: MANUFACTURED_BY.
    - Product-to-Category: BELONGS_TO.
-5. Price constraints: Map "under $X" or "cheap" to p.price < X, and "above $X" to p.price > X.
+5. Untrustworthy Properties & Purity Guardrails (Critical): Do NOT filter or sort using the 'privateLabel' property on Brand nodes or the 'price' property on Product nodes. The 'privateLabel' indicator is untrustworthy, and 'price' data is questionable. If a user asks for 'cheap', 'premium', 'under $X', or 'budget' items, ignore those price/label filters. Instead, translate the request structurally, or filter semantically by brand/product names, or simply map the active Category tree nodes without using price or privateLabel properties.
 6. Return Format: Return the complete paths so they render visually: e.g., MATCH (p:Product)-[r1:BELONGS_TO]->(c:Category), (p)-[r2:MANUFACTURED_BY]->(b:Brand) RETURN p, r1, c, r2, b LIMIT 100.
 7. Valid JSON: Ensure the Cypher query and the explanation are properly escaped so that the JSON parser does not fail (e.g., escape double quotes in the Cypher query).
 
 User Question: "${question}"
 Output JSON:`;
 
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
-        const response = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: systemPrompt }] }]
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`Gemini API Error: Status ${response.status}`);
-        }
-
-        const resData = await response.json();
-        
-        if (!resData.candidates || resData.candidates.length === 0) {
-          throw new Error('Gemini API returned no candidates.');
-        }
-
-        const rawText = resData.candidates[0].content.parts[0].text;
+        const rawText = await this.llmService.generateContent(systemPrompt, 'nlq', true, activeModel, provider);
         
         // Strip any markdown code wraps
         const cleanedText = rawText
@@ -122,7 +117,7 @@ Output JSON:`;
           cypher = parsed.cypher;
           explanation = parsed.explanation;
         } catch (jsonErr) {
-          console.warn('Failed to parse Gemini response as JSON. Attempting regex extraction...', jsonErr);
+          console.warn('Failed to parse response as JSON. Attempting regex extraction...', jsonErr);
           const cypherMatch = cleanedText.match(/"cypher"\s*:\s*"([^"]+)"/);
           const explanationMatch = cleanedText.match(/"explanation"\s*:\s*"([^"]+)"/);
           
@@ -139,11 +134,11 @@ Output JSON:`;
           }
         }
 
-        console.log(`Gemini successfully generated Cypher: ${cypher}`);
-        console.log(`Gemini Reasoning: ${explanation}`);
+        console.log(`${provider} successfully generated Cypher: ${cypher}`);
+        console.log(`${provider} Reasoning: ${explanation}`);
 
       } catch (err: any) {
-        console.error('Gemini translation failed, executing intelligent fallback parser:', err.message);
+        console.error(`${provider} translation failed, executing intelligent fallback parser:`, err.message);
         const fallbackRes = generateFallbackCypher(question);
         cypher = fallbackRes.cypher;
         explanation = fallbackRes.explanation;

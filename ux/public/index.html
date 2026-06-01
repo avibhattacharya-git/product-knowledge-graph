@@ -67,8 +67,8 @@
         <!-- Tab Selectors -->
         <div class="sidebar-tabs">
           <button class="tab-btn active" data-tab="search-tab"><i class="fa-solid fa-magnifying-glass"></i> Search & Filters</button>
-          <button class="tab-btn" data-tab="categories-tab"><i class="fa-solid fa-folder-tree"></i> Categories</button>
-          <button class="tab-btn" data-tab="brands-tab"><i class="fa-solid fa-copyright"></i> Brands</button>
+          <button class="tab-btn" data-tab="categories-tab"><span class="legend-initial legend-category" style="width: 16px; height: 16px; font-size: 8px; border-radius: 3px; margin-right: 4px;">C</span> Categories</button>
+          <button class="tab-btn" data-tab="brands-tab"><span class="legend-initial legend-brand" style="width: 16px; height: 16px; font-size: 8px; border-radius: 3px; margin-right: 4px;">B</span> Brands</button>
         </div>
 
         <div class="tab-content active" id="search-tab">
@@ -78,6 +78,14 @@
             <div class="search-mode-toggle">
               <button class="mode-toggle-btn active" id="mode-keyword-btn"><i class="fa-solid fa-filter"></i> Keyword</button>
               <button class="mode-toggle-btn" id="mode-gemini-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> Gemini AI (NLQ)</button>
+            </div>
+            
+            <!-- Active Model Selection Dropdown -->
+            <div class="model-select-container hide" id="model-select-box">
+              <label for="nlq-model-select"><i class="fa-solid fa-brain"></i> Active NLQ Model:</label>
+              <select id="nlq-model-select">
+                <!-- Dynamically populated at runtime from configuration settings -->
+              </select>
             </div>
             
             <!-- Gemini Warning Alert -->
@@ -110,22 +118,22 @@
               <label class="filter-checkbox-label">
                 <input type="checkbox" id="show-product-checkbox" checked>
                 <span class="checkbox-custom checkbox-product"></span>
-                <i class="fa-solid fa-box"></i> Products
+                <span class="legend-initial legend-product">GP</span> Products
               </label>
               <label class="filter-checkbox-label">
                 <input type="checkbox" id="show-brand-checkbox" checked>
                 <span class="checkbox-custom checkbox-brand"></span>
-                <i class="fa-solid fa-copyright"></i> Brands
+                <span class="legend-initial legend-brand">B</span> Brands
               </label>
               <label class="filter-checkbox-label" style="display: none;">
                 <input type="checkbox" id="show-catalogsource-checkbox" checked>
                 <span class="checkbox-custom checkbox-catalogsource"></span>
-                <i class="fa-solid fa-file-invoice"></i> Sources
+                <span class="legend-initial legend-product">GP</span> Sources
               </label>
               <label class="filter-checkbox-label">
                 <input type="checkbox" id="show-category-checkbox" checked>
                 <span class="checkbox-custom checkbox-category"></span>
-                <i class="fa-solid fa-tags"></i> Categories
+                <span class="legend-initial legend-category">C</span> Categories
               </label>
             </div>
           </div>

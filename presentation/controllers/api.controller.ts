@@ -12,6 +12,11 @@ export class ApiController {
   ) {}
 
   async getDbStatus(c: Context) {
+    const provider = appConfig.llm.activeProvider;
+    const activeApiKey = provider === 'openai' ? appConfig.openAiApiKey
+      : provider === 'anthropic' ? appConfig.anthropicApiKey
+      : appConfig.geminiApiKey;
+
     const status: any = {
       postgres: { connected: false, rowCounts: {} },
       neo4j: { connected: false, counts: {} },
@@ -19,6 +24,17 @@ export class ApiController {
         apiKeyPresent: !!appConfig.geminiApiKey,
         ingestEnabled: appConfig.llm.ingestEnabled,
         nlqEnabled: appConfig.llm.nlqEnabled
+      },
+      llm: {
+        activeProvider: provider,
+        ingestEnabled: appConfig.llm.ingestEnabled,
+        nlqEnabled: appConfig.llm.nlqEnabled,
+        apiKeyPresent: !!activeApiKey,
+        providers: {
+          gemini: { nlqModel: appConfig.llm.gemini.nlqModel },
+          openai: { nlqModel: appConfig.llm.openai.nlqModel },
+          anthropic: { nlqModel: appConfig.llm.anthropic.nlqModel }
+        }
       }
     };
 
@@ -115,10 +131,10 @@ export class ApiController {
 
   async processNLQ(c: Context) {
     try {
-      const { question } = await c.req.json();
+      const { question, model } = await c.req.json();
       if (!question) return c.json({ error: 'Question parameter is required' }, 400);
 
-      const result = await this.searchOrchestrator.processNLQ(question);
+      const result = await this.searchOrchestrator.processNLQ(question, model);
       return c.json(result);
     } catch (err: any) {
       return c.json({ error: err.message }, 500);

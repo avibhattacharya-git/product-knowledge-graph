@@ -5,3 +5,5 @@ datadump/
 *.log
 .DS_Store
 neo4j/
+scratch/
+
