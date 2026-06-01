@@ -10,6 +10,10 @@ export interface GraphLinkDTO {
   target: string;
   type: string;
   properties: Record<string, any>;
+  sourceName?: string;
+  sourceType?: string;
+  targetName?: string;
+  targetType?: string;
 }
 
 export interface GraphDTO {

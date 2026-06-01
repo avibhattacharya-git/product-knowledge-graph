@@ -12,6 +12,10 @@ export interface VisualLink {
   target: string;
   type: string;
   properties: Record<string, any>;
+  sourceName?: string;
+  sourceType?: string;
+  targetName?: string;
+  targetType?: string;
 }
 
 export interface VisualGraph {
@@ -87,9 +91,26 @@ export function formatNeoResult(result: any): VisualGraph {
     });
   });
 
+  const nodes = Array.from(nodesMap.values());
+  const links = Array.from(linksMap.values());
+
+  // Enrich link objects with source/target node metadata details
+  links.forEach(link => {
+    const srcNode = nodesMap.get(link.source);
+    const tgtNode = nodesMap.get(link.target);
+    if (srcNode) {
+      link.sourceName = srcNode.properties.name || srcNode.id;
+      link.sourceType = srcNode.labels[0] || 'Unknown';
+    }
+    if (tgtNode) {
+      link.targetName = tgtNode.properties.name || tgtNode.id;
+      link.targetType = tgtNode.labels[0] || 'Unknown';
+    }
+  });
+
   return {
-    nodes: Array.from(nodesMap.values()),
-    links: Array.from(linksMap.values())
+    nodes,
+    links
   };
 }
 
