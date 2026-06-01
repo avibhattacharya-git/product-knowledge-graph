@@ -66,9 +66,9 @@ To optimize conversational search and basket-building accuracy, we should seed t
 | 2 | `Meat, Seafood, & Poultry` | `Produce` | `COMPLEMENTARY_TO` | Complete meal bundles (e.g. steaks with fresh herbs/asparagus). |
 | 3 | `Spirits` | `Beverages / Sodas` | `COMPLEMENTARY_TO` | Alcoholic spirits require sodas/tonic waters as mixers. |
 | 4 | `Home Cleaning Products` | `Paper Goods` | `COMPLEMENTARY_TO` | Cleaners require paper towels or microfiber wipes. |
-| 5 | `Cosmetics` | `Makeup Accessories` | `COMPATIBLE_WITH` | Makeup application tools (sponges, brushes) with cosmetic liquids. |
+| 5 | `Cosmetics` | `Makeup Accessories` | `COMPLEMENTARY_TO` | Makeup application tools (sponges, brushes) with cosmetic liquids. |
 | 6 | `Hair Color` | `Hair Care (Shampoo)` | `COMPLEMENTARY_TO` | Color-treated hair requires specialized shampoos for maintenance. |
-| 7 | `Automotive Cleaners` | `Home Goods (Towels)` | `COMPATIBLE_WITH` | Auto wash soaps require mitts and drying cloths. |
+| 7 | `Automotive Cleaners` | `Home Goods (Towels)` | `COMPLEMENTARY_TO` | Auto wash soaps require mitts and drying cloths. |
 | 8 | `Diapers` | `Baby Wipes` | `COMPLEMENTARY_TO` | Near 100% purchase co-occurrence in actual baby care baskets. |
 | 9 | `Organic Food Items` | `Traditional Food Items`| `SUBSTITUTE_CATEGORY` | Standard healthy/organic alternative choices for dietary shoppers. |
 | 10| `Gluten-Free Baking` | `Traditional Baking` | `SUBSTITUTE_CATEGORY` | Standard allergen-safe alternatives for baking ingredients. |
@@ -104,11 +104,11 @@ MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "paper" OR toLower(c2.name) 
 MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.82
 MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.82;
 
-// 5. Cosmetics ↔ Makeup Accessories Compatibility
+// 5. Cosmetics ↔ Makeup Accessories Complements
 MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "cosmetics" OR toLower(c1.name) CONTAINS "makeup"
 MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "accessories" OR toLower(c2.name) CONTAINS "brush"
-MERGE (c1)-[r1:COMPATIBLE_WITH]->(c2) SET r1.similarity = 0.90
-MERGE (c2)-[r2:COMPATIBLE_WITH]->(c1) SET r2.similarity = 0.90;
+MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.90
+MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.90;
 
 // 6. Hair Color ↔ Hair Care (Shampoo) Complements
 MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "hair color" OR toLower(c1.name) CONTAINS "dye"
@@ -116,11 +116,11 @@ MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "shampoo" OR toLower(c2.name
 MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.84
 MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.84;
 
-// 7. Automotive Cleaners ↔ Home Goods (Towels) Compatibility
+// 7. Automotive Cleaners ↔ Home Goods (Towels) Complements
 MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "automotive cleaner" OR toLower(c1.name) CONTAINS "auto wash"
 MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "towel" OR toLower(c2.name) CONTAINS "home goods"
-MERGE (c1)-[r1:COMPATIBLE_WITH]->(c2) SET r1.similarity = 0.80
-MERGE (c2)-[r2:COMPATIBLE_WITH]->(c1) SET r2.similarity = 0.80;
+MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.80
+MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.80;
 
 // 8. Diapers ↔ Baby Wipes Complements
 MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "diaper" OR toLower(c1.name) CONTAINS "baby care"
