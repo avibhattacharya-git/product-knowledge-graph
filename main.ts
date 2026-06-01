@@ -20,6 +20,7 @@ import { BrandService } from './service/brand.service';
 import { CategoryService } from './service/category.service';
 import { GraphService } from './service/graph.service';
 import { NlqService } from './service/nlq.service';
+import { ChatService } from './service/chat.service';
 
 // Orchestrators
 import { EtlOrchestrator } from './service/orchestrator/etl.orchestrator';
@@ -45,6 +46,7 @@ const brandService = new BrandService(brandRepo);
 const categoryService = new CategoryService(categoryRepo);
 const graphService = new GraphService(graphRepo);
 const nlqService = new NlqService(graphRepo, llmService);
+const chatService = new ChatService(nlqService, llmService);
 
 const etlOrchestrator = new EtlOrchestrator(etlService);
 const searchOrchestrator = new SearchOrchestrator(
@@ -55,7 +57,7 @@ const searchOrchestrator = new SearchOrchestrator(
   nlqService
 );
 
-const apiController = new ApiController(searchOrchestrator, pgPool, neoDriver);
+const apiController = new ApiController(searchOrchestrator, pgPool, neoDriver, chatService);
 const etlController = new EtlController(etlOrchestrator);
 
 const apiRouter = createApiRouter(apiController, etlController);

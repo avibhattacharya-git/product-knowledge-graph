@@ -71,6 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchGraphData();
   fetchCategoryHierarchy();
   fetchBrandsList();
+  initCopilotChat();
 });
 
 // Check postgres & neo4j connection status and counts
@@ -132,14 +133,15 @@ async function checkDatabasesStatus() {
         }
       }
 
-      // Dynamically populate model selection dropdown based on configured models
+      // Dynamically populate model selection dropdowns based on configured models
       const modelSelect = document.getElementById('nlq-model-select');
-      if (modelSelect && llm.providers) {
+      const copilotModelSelect = document.getElementById('copilot-model-select');
+      if (llm.providers) {
         const geminiModel = llm.providers.gemini.nlqModel;
         const openaiModel = llm.providers.openai.nlqModel;
         const anthropicModel = llm.providers.anthropic.nlqModel;
         
-        modelSelect.innerHTML = `
+        const optionsHtml = `
           <option value="${geminiModel}">Gemini: ${geminiModel}</option>
           <option value="${openaiModel}">OpenAI: ${openaiModel} (Premium)</option>
           <option value="gpt-4o-mini">OpenAI: gpt-4o-mini (Fast)</option>
@@ -147,9 +149,17 @@ async function checkDatabasesStatus() {
           <option value="claude-haiku-4-5-20251001">Anthropic: claude-haiku-4-5 (Fast)</option>
         `;
         
+        if (modelSelect) {
+          modelSelect.innerHTML = optionsHtml;
+        }
+        if (copilotModelSelect) {
+          copilotModelSelect.innerHTML = optionsHtml;
+        }
+        
         // Select active provider's model by default
         const defaultModel = llm.providers[llm.activeProvider].nlqModel;
-        modelSelect.value = defaultModel;
+        if (modelSelect) modelSelect.value = defaultModel;
+        if (copilotModelSelect) copilotModelSelect.value = defaultModel;
       }
     } else {
       state.geminiEnabled = false;
@@ -1739,3 +1749,273 @@ async function fetchCategoryRelationsIntelligence(categoryNode) {
 // Expose state and selectNodeFromId globally on window for E2E validation
 window.state = state;
 window.selectNodeFromId = selectNodeFromId;
+
+// ==========================================================================
+   // 11. Interactive AI Copilot Conversational Chat Controller
+   // ==========================================================================
+
+function initCopilotChat() {
+  const toggleBtn = document.getElementById('copilot-toggle-btn');
+  const closeBtn = document.getElementById('close-copilot-btn');
+  const drawer = document.getElementById('copilot-drawer');
+  const sendBtn = document.getElementById('copilot-send-btn');
+  const chatInput = document.getElementById('copilot-chat-input');
+  const chatHistory = document.getElementById('copilot-chat-history');
+
+  if (!toggleBtn || !drawer) return;
+
+  // Synchronize model selectors in real-time
+  const modelSelect = document.getElementById('nlq-model-select');
+  const copilotModelSelect = document.getElementById('copilot-model-select');
+  if (modelSelect && copilotModelSelect) {
+    modelSelect.addEventListener('change', () => {
+      copilotModelSelect.value = modelSelect.value;
+    });
+    copilotModelSelect.addEventListener('change', () => {
+      modelSelect.value = copilotModelSelect.value;
+    });
+  }
+
+  // Add neon visual unread badge indicator upon visual platform launch
+  setTimeout(() => {
+    toggleBtn.classList.add('copilot-toggle-badge');
+  }, 3000);
+
+  // Toggle Drawer open/close -> programmatically activates sidebar tab
+  toggleBtn.onclick = () => {
+    toggleBtn.classList.remove('copilot-toggle-badge');
+    const copilotTabBtn = document.getElementById('copilot-tab-btn');
+    if (copilotTabBtn) {
+      copilotTabBtn.click();
+      chatInput.focus();
+    }
+  };
+
+  closeBtn.onclick = () => {
+    // Switch active tab back to inspector tab upon close click
+    const inspectorTabBtn = document.querySelector('.tab-btn[data-tab="inspector-tab"]');
+    if (inspectorTabBtn) {
+      inspectorTabBtn.click();
+    }
+  };
+
+  // Submit on Send Button click
+  sendBtn.onclick = () => submitMessage();
+
+  // Submit on pressing Enter in input field
+  chatInput.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      submitMessage();
+    }
+  };
+
+  async function submitMessage() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+
+    chatInput.value = '';
+    
+    // Stage User Bubble
+    appendBubble('user', text);
+
+    // Stage Loader typing indicator
+    const loaderId = appendTypingIndicator();
+
+    try {
+      const selectedModel = (copilotModelSelect && copilotModelSelect.value) || (modelSelect && modelSelect.value) || null;
+
+      const history = compileChatHistory();
+
+      // Send to API Chat
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: history,
+          model: selectedModel
+        })
+      });
+
+      const data = await res.json();
+      removeTypingIndicator(loaderId);
+
+      if (res.ok) {
+        // A. If query requires dynamic graph update, inject nodes/links into simulation
+        if (data.action === 'api_call' && data.graph) {
+          showToast('AI loaded new graph visualization onto canvas!', 'success');
+          state.allNodes = data.graph.nodes;
+          state.allLinks = data.graph.links;
+          applyGraphFilters();
+
+          // Reveal floating Cypher badge info in visualization panel
+          if (data.translatedCypher) {
+            state.geminiCypher = data.translatedCypher;
+            const previewCode = document.getElementById('cypher-preview-code');
+            const previewBadge = document.getElementById('cypher-preview-badge');
+            const previewExplanation = document.getElementById('cypher-explanation-text');
+            
+            if (previewCode) previewCode.textContent = data.translatedCypher;
+            if (previewBadge) previewBadge.classList.remove('hide');
+            if (previewExplanation && data.explanation) {
+              previewExplanation.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent); font-size:10px; margin-right:6px;"></i> ${data.explanation}`;
+              previewExplanation.classList.remove('hide');
+            }
+          }
+
+          // Smoothly center camera and highlight first node if a target is returned
+          if (data.targetNodeId) {
+            setTimeout(() => {
+              selectNodeFromId(data.targetNodeId);
+            }, 500);
+          }
+        }
+
+        // B. Render markdown conversational response bubble
+        appendBubble('assistant', data.reply);
+      } else {
+        appendBubble('assistant', `### Service Error ⚠️\n\nI was unable to complete your request:\n\n* **Details:** \`${data.error || 'Unknown API Exception'}\``);
+      }
+    } catch (err) {
+      removeTypingIndicator(loaderId);
+      appendBubble('assistant', `### Network Timeout ⚠️\n\nFailed to establish connection to the AI Chat service:\n\n* **Error:** \`${err.message}\``);
+    }
+  }
+
+  function appendBubble(role, rawContent) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${role}`;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+
+    // Parse simple Markdown elements inside reply (bold, backticks, bullet lists, tables)
+    bubble.innerHTML = parseMarkdown(rawContent);
+
+    // Auto-detect backticked item matches and replace with clickable interactive pill deep-links!
+    postProcessPills(bubble);
+
+    messageDiv.appendChild(bubble);
+    chatHistory.appendChild(messageDiv);
+
+    // Smooth scroll chat view to bottom
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+  }
+
+  function appendTypingIndicator() {
+    const loaderId = 'typing_' + Math.floor(Math.random() * 1000);
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'chat-message assistant';
+    messageDiv.id = loaderId;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble loading-bubble';
+    bubble.innerHTML = `
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+    `;
+
+    messageDiv.appendChild(bubble);
+    chatHistory.appendChild(messageDiv);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    
+    return loaderId;
+  }
+
+  function removeTypingIndicator(id) {
+    const loader = document.getElementById(id);
+    if (loader) loader.remove();
+  }
+
+  function compileChatHistory() {
+    const history = [];
+    const bubbles = chatHistory.querySelectorAll('.chat-message');
+    bubbles.forEach(b => {
+      const role = b.classList.contains('user') ? 'user' : 'assistant';
+      const text = b.textContent.trim();
+      if (text) {
+        history.push({ role, content: text });
+      }
+    });
+    return history.slice(-6); // pass last 6 turns of context to save tokens
+  }
+
+  // Pure-JS Markdown parser
+  function parseMarkdown(md) {
+    if (!md) return '';
+    let html = md;
+
+    // 1. Process Markdown tables
+    const tableRegex = /\|(.+)\|[\r\n]+\|([-:\s|]+)\|[\r\n]+((?:\|.+|[\r\n]+)*)/g;
+    html = html.replace(tableRegex, (match, headerRow, separatorRow, bodyRows) => {
+      const headers = headerRow.split('|').map(h => h.trim()).filter(h => h);
+      const rows = bodyRows.split('\n')
+        .map(r => r.trim())
+        .filter(r => r.startsWith('|'))
+        .map(r => r.split('|').map(c => c.trim()).filter(c => c !== ''));
+
+      let tableHtml = '<table><thead><tr>';
+      headers.forEach(h => { tableHtml += `<th>${h}</th>`; });
+      tableHtml += '</tr></thead><tbody>';
+
+      rows.forEach(row => {
+        if (row.length === 0) return;
+        tableHtml += '<tr>';
+        row.forEach(cell => { tableHtml += `<td>${cell}</td>`; });
+        tableHtml += '</tr>';
+      });
+
+      tableHtml += '</tbody></table>';
+      return tableHtml;
+    });
+
+    // 2. Headings
+    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+    html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
+
+    // 3. Bold tags
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    // 4. Bullet lists
+    html = html.replace(/^\*\s+(.*$)/gim, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>');
+    html = html.replace(/<\/ul>\s*<ul>/g, ''); // consolidate neighboring lists
+
+    // 5. Line breaks
+    html = html.replace(/\n/g, '<br>');
+
+    return html;
+  }
+
+  // Replaces backticked items with beautiful click-interactive capsules
+  function postProcessPills(bubbleContainer) {
+    const rawHtml = bubbleContainer.innerHTML;
+    // Find all backticked items
+    const matches = rawHtml.match(/`(.*?)`/g);
+    if (!matches) return;
+
+    let updatedHtml = rawHtml;
+    matches.forEach(match => {
+      const term = match.slice(1, -1).trim();
+      
+      // Attempt to locate this entity dynamically inside the active canvas nodes!
+      const matchingNode = state.allNodes.find(n => {
+        const name = (n.properties?.name || '').toLowerCase();
+        return name === term.toLowerCase();
+      });
+
+      if (matchingNode) {
+        const type = getNodeType(matchingNode);
+        const pillClass = type === 'Brand' ? 'chat-pill chat-pill-brand' : 'chat-pill';
+        const replaceString = `<span class="${pillClass}" onclick="selectNodeFromId('${matchingNode.id}')"><i class="fa-solid fa-crosshairs mr-1" style="font-size: 8px;"></i> ${matchingNode.properties.name}</span>`;
+        updatedHtml = updatedHtml.replace(match, replaceString);
+      } else {
+        // Fallback: strip backticks and format as high-contrast code block
+        updatedHtml = updatedHtml.replace(match, `<code>${term}</code>`);
+      }
+    });
+
+    bubbleContainer.innerHTML = updatedHtml;
+  }
+}

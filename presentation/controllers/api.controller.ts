@@ -3,12 +3,14 @@ import { SearchOrchestrator } from '../../service/orchestrator/search.orchestrat
 import { Pool } from 'pg';
 import { Driver } from 'neo4j-driver';
 import { appConfig } from '../../configs/app.config';
+import { ChatService } from '../../service/chat.service';
 
 export class ApiController {
   constructor(
     private searchOrchestrator: SearchOrchestrator,
     private pgPool: Pool,
-    private neoDriver: Driver
+    private neoDriver: Driver,
+    private chatService: ChatService
   ) {}
 
   async getDbStatus(c: Context) {
@@ -135,6 +137,18 @@ export class ApiController {
       if (!question) return c.json({ error: 'Question parameter is required' }, 400);
 
       const result = await this.searchOrchestrator.processNLQ(question, model);
+      return c.json(result);
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
+
+  async processChat(c: Context) {
+    try {
+      const { message, history, model } = await c.req.json();
+      if (!message) return c.json({ error: 'Message parameter is required' }, 400);
+
+      const result = await this.chatService.processChatMessage(message, history, model);
       return c.json(result);
     } catch (err: any) {
       return c.json({ error: err.message }, 500);

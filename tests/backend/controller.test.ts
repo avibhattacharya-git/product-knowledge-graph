@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { ApiController } from '../../presentation/controllers/api.controller';
 import { EtlController } from '../../presentation/controllers/etl.controller';
 import { createApiRouter } from '../../presentation/routes/api.routes';
+import { ChatService } from '../../service/chat.service';
 
 describe('US Retailer Product Knowledge Graph - Hono Route & Controller Unit Tests', () => {
 
@@ -80,7 +81,11 @@ describe('US Retailer Product Knowledge Graph - Hono Route & Controller Unit Tes
       ...customEtlMocks
     } as any;
 
-    const apiController = new ApiController(mockSearchOrchestrator, mockPgPool, mockNeoDriver);
+    const mockChatService = {
+      processChatMessage: mock(() => Promise.resolve({ action: 'reply', reply: 'Mocked reply' }))
+    } as any;
+
+    const apiController = new ApiController(mockSearchOrchestrator, mockPgPool, mockNeoDriver, mockChatService);
     const etlController = new EtlController(mockEtlOrchestrator);
     const apiRouter = createApiRouter(apiController, etlController);
 
@@ -191,5 +196,28 @@ describe('US Retailer Product Knowledge Graph - Hono Route & Controller Unit Tes
     expect(body.success).toBe(true);
     expect(body.stats.brandsSynced).toBe(100);
     expect(mockEtlOrchestrator.runIngestion).toHaveBeenCalledTimes(1);
+  });
+
+  test('POST /api/chat validates input parameter presence and processes prompt', async () => {
+    const { app } = setupTestApp();
+
+    // 1. Missing message parameter
+    const resBad = await app.request('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    expect(resBad.status).toBe(400);
+
+    // 2. Success case
+    const resGood = await app.request('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Recommend chips' })
+    });
+    expect(resGood.status).toBe(200);
+    const body = await resGood.json();
+    expect(body.action).toBe('reply');
+    expect(body.reply).toBe('Mocked reply');
   });
 });

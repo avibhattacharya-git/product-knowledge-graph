@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Product Knowledge Graph Console</title>
+  <title>Retailer Product Knowledge Graph Console</title>
   
   <!-- SEO Meta Tags -->
   <meta name="description" content="Futuristic dark-mode knowledge graph dashboard to analyze US retailer pricing matrices, competitor trees, product substitutes, and brand hierarchies.">
@@ -235,6 +235,7 @@
             <button id="zoom-out-btn" class="toolbar-btn" title="Zoom Out"><i class="fa-solid fa-minus"></i></button>
             <button id="zoom-fit-btn" class="toolbar-btn" title="Fit to Screen"><i class="fa-solid fa-expand"></i></button>
             <button id="physics-toggle-btn" class="toolbar-btn active" title="Toggle Force Physics"><i class="fa-solid fa-bolt"></i></button>
+            <button id="copilot-toggle-btn" class="toolbar-btn" title="Toggle AI Copilot"><i class="fa-solid fa-comments"></i></button>
           </div>
         </div>
 
@@ -242,6 +243,8 @@
         <div class="graph-canvas-container" id="graph-canvas">
           <!-- SVGs will be injected here -->
         </div>
+
+
 
         <!-- Canvas Loading Overlay for Gemini -->
         <div class="canvas-overlay hide" id="gemini-loading-overlay">
@@ -302,6 +305,7 @@
         
         <div class="sidebar-tabs">
           <button class="tab-btn active" data-tab="inspector-tab"><i class="fa-solid fa-circle-info"></i> Object Inspector</button>
+          <button class="tab-btn" data-tab="copilot-tab" id="copilot-tab-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Copilot</button>
           <button class="tab-btn" data-tab="builder-tab"><i class="fa-solid fa-circle-plus"></i> Graph Builder</button>
         </div>
 
@@ -410,6 +414,44 @@
                 </ul>
               </div>
 
+            </div>
+          </div>
+        </div>
+
+        <!-- Dedicated AI Copilot Side Tab Panel -->
+        <div class="tab-content" id="copilot-tab">
+          <div class="copilot-sidebar-panel" id="copilot-drawer">
+            <div class="copilot-header">
+              <div class="copilot-title">
+                <i class="fa-solid fa-wand-magic-sparkles copilot-icon"></i>
+                <h3>AI Copilot Chat</h3>
+              </div>
+              <div class="copilot-header-actions">
+                <select id="copilot-model-select" class="copilot-select-sm" title="Active Copilot Chat Model">
+                  <!-- Dynamically populated at runtime -->
+                </select>
+                <button id="close-copilot-btn" class="copilot-close-btn" title="Close AI Copilot"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+            </div>
+            
+            <div class="copilot-body" id="copilot-chat-history">
+              <!-- Initial Greeting -->
+              <div class="chat-message assistant">
+                <div class="chat-bubble">
+                  Hi! I am your interactive **AI Product Knowledge Graph Copilot** 🚀<br><br>
+                  I can explain retail concepts, suggest high-margin bundles, and execute visual graph queries. Try asking me:<br>
+                  * *"Find top 5 soda brands and their competitors"*
+                  * *"Suggest a bundle to maximize sales of chips"*
+                  * *"Show healthier brands for soft drinks or soda"*
+                </div>
+              </div>
+            </div>
+            
+            <div class="copilot-footer">
+              <div class="chat-input-wrapper">
+                <input type="text" id="copilot-chat-input" placeholder="Ask Copilot... (e.g. 'Show chips complements')" autocomplete="off">
+                <button id="copilot-send-btn" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+              </div>
             </div>
           </div>
         </div>

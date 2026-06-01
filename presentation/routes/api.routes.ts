@@ -56,5 +56,8 @@ export function createApiRouter(
   // 16. GET /api/products/:id/path - Fetch hierarchical parent category tree breadcrumbs
   apiRouter.get('/products/:id/path', (c) => apiController.getProductCategoryPath(c));
 
+  // 17. POST /api/chat - Interactive AI Copilot Chat Route
+  apiRouter.post('/chat', (c) => apiController.processChat(c));
+
   return apiRouter;
 }
