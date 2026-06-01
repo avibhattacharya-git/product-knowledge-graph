@@ -56,10 +56,10 @@ export class GraphRepository {
     }
   }
 
-  async runRawCypher(query: string): Promise<any> {
+  async runRawCypher(query: string, parameters?: Record<string, any>): Promise<any> {
     const session = this.neoDriver.session();
     try {
-      return await session.run(query);
+      return await session.run(query, parameters);
     } finally {
       await session.close();
     }

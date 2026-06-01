@@ -197,4 +197,90 @@ describe('US Retailer Product Knowledge Graph - Core Services Unit Tests', () =>
     expect(mockEtlService.ingestBrandRelationships).toHaveBeenCalledTimes(1);
     expect(mockEtlService.streamProductCatalog).toHaveBeenCalledTimes(1);
   });
+
+  test('NlqService handles processNLQQuery and applies LLM-as-a-Judge enrichment and filtering', async () => {
+    const mockGraphRepo = {
+      runRawCypher: mock((query: string, params?: any) => {
+        if (query.includes('WHERE id(n) IN $internalIds')) {
+          // Mock enrichment database response
+          return Promise.resolve({
+            records: [
+              {
+                get: (key: string) => {
+                  if (key === 'internalId') return 123;
+                  if (key === 'prodBrandName') return 'Poppi';
+                  if (key === 'prodBrandOwner') return 'Poppi, Inc.';
+                  if (key === 'prodCategoryLineage') return ['Sodas', 'Beverages'];
+                  return null;
+                }
+              },
+              {
+                get: (key: string) => {
+                  if (key === 'internalId') return 456;
+                  if (key === 'prodBrandName') return 'Poppies';
+                  if (key === 'prodBrandOwner') return 'Poppies Cookies Co.';
+                  if (key === 'prodCategoryLineage') return ['Cookies', 'Bakery'];
+                  return null;
+                }
+              }
+            ]
+          });
+        }
+        // Visual Cypher query response
+        return Promise.resolve({
+          records: [
+            {
+              keys: ['p', 'b'],
+              get: (key: string) => {
+                if (key === 'p') {
+                  return {
+                    identity: 123,
+                    labels: ['Product'],
+                    properties: { name: 'Poppi Strawberry Lemonade 12oz', size: '12', measure: 'oz' }
+                  };
+                }
+                if (key === 'b') {
+                  return {
+                    identity: 456,
+                    labels: ['Product'],
+                    properties: { name: 'Poppies Caramel Cookies 6oz', size: '6', measure: 'oz' }
+                  };
+                }
+                return null;
+              }
+            }
+          ]
+        });
+      })
+    } as any;
+
+    const mockLlmService = {
+      generateContent: mock((prompt: string) => {
+        if (prompt.includes('You are a professional Cypher translator')) {
+          return Promise.resolve(JSON.stringify({
+            cypher: 'MATCH (p:Product) RETURN p LIMIT 2',
+            explanation: 'Retrieve mock products'
+          }));
+        }
+        if (prompt.includes('You are a professional semantic judge')) {
+          // The judge prompt includes our beautifully enriched product strings!
+          expect(prompt).toContain('Mfg: Poppi, Inc.');
+          expect(prompt).toContain('Beverages ➜ Sodas');
+          expect(prompt).toContain('Bakery ➜ Cookies');
+          // Judge decides to retain only node ID "123" (Poppi prebiotic soda)
+          return Promise.resolve('["123"]');
+        }
+        return Promise.resolve('');
+      })
+    } as any;
+
+    const nlqService = new NlqService(mockGraphRepo, mockLlmService);
+    const result = await nlqService.processNLQQuery('competitors for Poppi');
+
+    expect(result.translatedCypher).toBe('MATCH (p:Product) RETURN p LIMIT 2');
+    expect(result.explanation).toBe('Retrieve mock products');
+    expect(result.nodes.length).toBe(1);
+    expect(result.nodes[0].id).toBe('123');
+    expect(result.nodes[0].properties.name).toBe('Poppi Strawberry Lemonade 12oz');
+  });
 });

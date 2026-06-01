@@ -430,6 +430,7 @@
                 <select id="copilot-model-select" class="copilot-select-sm" title="Active Copilot Chat Model">
                   <!-- Dynamically populated at runtime -->
                 </select>
+                <button id="clear-copilot-btn" class="copilot-clear-btn" title="Clear Chat Context"><i class="fa-solid fa-trash-can"></i></button>
                 <button id="close-copilot-btn" class="copilot-close-btn" title="Close AI Copilot"><i class="fa-solid fa-xmark"></i></button>
               </div>
             </div>
@@ -498,11 +499,15 @@
             <h3>Create Relationship Link</h3>
             <form id="add-relation-form" class="builder-form">
               <div class="form-group">
-                <label for="rel-source-node">Source Entity</label>
-                <select id="rel-source-node" class="form-control" required>
-                  <option value="">-- Select Source --</option>
-                  <!-- Populated via app.js -->
-                </select>
+                <label>Source Entity</label>
+                <div class="custom-typeahead" id="source-typeahead-container">
+                  <div class="typeahead-input-wrapper">
+                    <input type="text" id="rel-source-search" class="form-control" placeholder="Search source node..." autocomplete="off" required>
+                    <i class="fa-solid fa-chevron-down typeahead-arrow"></i>
+                  </div>
+                  <div class="typeahead-dropdown hide" id="rel-source-dropdown"></div>
+                  <input type="hidden" id="rel-source-node" required>
+                </div>
               </div>
 
               <div class="form-group">
@@ -518,14 +523,18 @@
               </div>
 
               <div class="form-group">
-                <label for="rel-target-node">Target Entity</label>
-                <select id="rel-target-node" class="form-control" required>
-                  <option value="">-- Select Target --</option>
-                  <!-- Populated via app.js -->
-                </select>
+                <label>Target Entities (Multi-Select)</label>
+                <div class="custom-typeahead" id="target-typeahead-container">
+                  <div class="typeahead-chips-wrapper" id="target-chips-container">
+                    <!-- Dynamic chips placed here -->
+                    <input type="text" id="rel-target-search" placeholder="Search target nodes..." autocomplete="off">
+                    <i class="fa-solid fa-chevron-down typeahead-arrow" style="right: 16px;"></i>
+                  </div>
+                  <div class="typeahead-dropdown hide" id="rel-target-dropdown"></div>
+                </div>
               </div>
 
-              <button type="submit" class="btn btn-primary btn-block"><i class="fa-solid fa-link"></i> Draw Link</button>
+              <button type="submit" class="btn btn-primary btn-block"><i class="fa-solid fa-link"></i> Draw Links</button>
             </form>
           </div>
         </div>

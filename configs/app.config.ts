@@ -51,7 +51,7 @@ export const appConfig: AppConfig = {
     },
     anthropic: {
       ingestModel: process.env.ANTHROPIC_INGEST_MODEL || 'claude-haiku-4-5-20251001',
-      nlqModel: process.env.ANTHROPIC_NLQ_MODEL || 'claude-opus-4-8'
+      nlqModel: process.env.ANTHROPIC_NLQ_MODEL || 'claude-haiku-4-5-20251001' // Originally 'claude-opus-4-8' (switched to Haiku for sub-second low latency)
     }
   },
   pgViews: {

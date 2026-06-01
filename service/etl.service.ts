@@ -267,16 +267,16 @@ export class EtlService {
       });
       console.log(`${complementsToLoad.length} complement and ${substitutesToLoad.length} substitute category pairs loaded directly from cache.`);
 
-      // 4. Evaluate uncached ones using LLM
+      // 4. Evaluate uncached ones using LLM with Self-Healing Queue Monitor
       if (uncachedCatCandidates.length > 0) {
         if (!apiKey || !appConfig.llm.ingestEnabled) {
           console.warn('API Key missing or explicitly disabled for ingestion, skipping category evaluation to preserve cache purity.');
         } else {
-          console.log(`Starting batched LLM category evaluations for ${uncachedCatCandidates.length} pairs...`);
+          console.log(`Starting batched LLM category evaluations for ${uncachedCatCandidates.length} pairs (Batch Size: 50)...`);
           const batchSize = 50;
-          for (let i = 0; i < uncachedCatCandidates.length; i += batchSize) {
-            const chunk = uncachedCatCandidates.slice(i, i + batchSize);
-            const promptPayload = chunk.map((item, idx) => ({
+
+          const processCategoryBatch = async (batch: any[]): Promise<boolean> => {
+            const promptPayload = batch.map((item, idx) => ({
               id: `pair_${idx}`,
               catA: item.cat1_name,
               catB: item.cat2_name
@@ -301,7 +301,7 @@ ${JSON.stringify(promptPayload, null, 2)}
               const judgments = JSON.parse(cleanedText);
 
               const cacheQueries: Promise<any>[] = [];
-              chunk.forEach((item, idx) => {
+              batch.forEach((item, idx) => {
                 const id = `pair_${idx}`;
                 const type = String(judgments[id] || 'NONE').toUpperCase().trim();
                 const relationshipType = ['COMPLEMENT', 'SUBSTITUTE', 'NONE'].includes(type) ? type : 'NONE';
@@ -319,10 +319,45 @@ ${JSON.stringify(promptPayload, null, 2)}
                 }
               });
               await Promise.all(cacheQueries);
+              return true;
             } catch (err: any) {
-              console.error(`[Category LLM Judge] Failed to process batch:`, err.message);
+              console.error(`  ❌ [Category LLM Judge] Failed to process batch of size ${batch.length} (Skipping insert):`, err.message);
+              return false;
             }
+          };
+
+          const totalBatches = Math.ceil(uncachedCatCandidates.length / batchSize);
+          const pendingQueue: any[][] = [];
+          for (let i = 0; i < totalBatches; i++) {
+            const start = i * batchSize;
+            pendingQueue.push(uncachedCatCandidates.slice(start, start + batchSize));
           }
+
+          const concurrencyLimit = 2;
+          let completedCount = 0;
+
+          const runWorker = async (): Promise<void> => {
+            while (true) {
+              const chunk = pendingQueue.shift();
+              if (!chunk) break;
+
+              const success = await processCategoryBatch(chunk);
+              if (success) {
+                completedCount++;
+                await new Promise(r => setTimeout(r, 2000));
+              } else {
+                console.warn(`  ⚠️ [Queue Monitor] Re-queueing failed category batch to the back of the queue...`);
+                pendingQueue.push(chunk);
+                await new Promise(r => setTimeout(r, 15000));
+              }
+            }
+          };
+
+          const workers: Promise<void>[] = [];
+          for (let i = 0; i < Math.min(concurrencyLimit, totalBatches); i++) {
+            workers.push(runWorker());
+          }
+          await Promise.all(workers);
         }
       }
 

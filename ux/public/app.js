@@ -33,6 +33,8 @@ const state = {
 
 // D3 Selections & Simulation
 let svg, g, simulation, zoomBehavior;
+let selectedSourceId = null;
+const selectedTargetIds = new Set();
 const width = window.innerWidth;
 const height = window.innerHeight;
 
@@ -72,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCategoryHierarchy();
   fetchBrandsList();
   initCopilotChat();
+  initTypeaheadControllers();
 });
 
 // Check postgres & neo4j connection status and counts
@@ -1493,18 +1496,30 @@ function bindUIEvents() {
   // Submit Relationships
   document.getElementById('add-relation-form').onsubmit = (e) => {
     e.preventDefault();
-    const source = document.getElementById('rel-source-node').value;
-    const target = document.getElementById('rel-target-node').value;
+    const source = selectedSourceId;
     const type = document.getElementById('rel-type').value;
 
-    const properties = {};
-    const id = `rel_${source}_${target}_${Math.floor(Math.random()*1000)}`;
-    const newLink = { id, source, target, type, properties };
+    if (!source) {
+      return showToast('Please select a valid Source Entity.', 'error');
+    }
+    if (selectedTargetIds.size === 0) {
+      return showToast('Please select at least one Target Entity.', 'error');
+    }
 
-    state.allLinks.push(newLink);
+    let createdCount = 0;
+    selectedTargetIds.forEach(target => {
+      const properties = {};
+      const id = `rel_${source}_${target}_${Math.floor(Math.random()*1000)}`;
+      const newLink = { id, source, target, type, properties };
+      state.allLinks.push(newLink);
+      createdCount++;
+    });
+
     applyGraphFilters();
-    showToast(`Relationship Link [${type}] drawn successfully!`, 'success');
-    document.getElementById('add-relation-form').reset();
+    showToast(`Successfully drawn ${createdCount} relationship link(s) on canvas!`, 'success');
+    
+    // Reset form & selections
+    populateFormSelects();
   };
 }
 
@@ -1516,32 +1531,367 @@ function getRelCheckSuffix(type) {
 }
 
 function populateFormSelects() {
-  const sourceSel = document.getElementById('rel-source-node');
-  const targetSel = document.getElementById('rel-target-node');
+  selectedSourceId = null;
+  selectedTargetIds.clear();
   
-  const oldSourceVal = sourceSel.value;
-  const oldTargetVal = targetSel.value;
+  const sourceSearch = document.getElementById('rel-source-search');
+  const sourceHidden = document.getElementById('rel-source-node');
+  const targetSearch = document.getElementById('rel-target-search');
+  const targetChipsContainer = document.getElementById('target-chips-container');
+  
+  if (sourceSearch) sourceSearch.value = '';
+  if (sourceHidden) sourceHidden.value = '';
+  if (targetSearch) targetSearch.value = '';
+  
+  if (targetChipsContainer) {
+    targetChipsContainer.querySelectorAll('.typeahead-chip').forEach(el => el.remove());
+  }
+}
 
-  sourceSel.innerHTML = '<option value="">-- Select Source --</option>';
-  targetSel.innerHTML = '<option value="">-- Select Target --</option>';
+// 12. Searchable Custom Typeahead Controller
+function initTypeaheadControllers() {
+  const sourceSearch = document.getElementById('rel-source-search');
+  const sourceDropdown = document.getElementById('rel-source-dropdown');
+  const sourceHidden = document.getElementById('rel-source-node');
 
-  const sorted = [...state.allNodes].sort((a,b) => {
-    const na = a.properties.name || a.id;
-    const nb = b.properties.name || b.id;
-    return na.localeCompare(nb);
-  });
+  const targetSearch = document.getElementById('rel-target-search');
+  const targetDropdown = document.getElementById('rel-target-dropdown');
+  const targetChipsContainer = document.getElementById('target-chips-container');
 
-  sorted.forEach(node => {
-    const name = node.properties.name || node.id;
-    const type = getNodeType(node);
-    const opt = `<option value="${node.id}">[${type}] ${name}</option>`;
+  if (!sourceSearch || !targetSearch) return;
+
+  // Click on target input wrapper focuses search
+  if (targetChipsContainer) {
+    targetChipsContainer.onclick = (e) => {
+      if (e.target === targetChipsContainer) {
+        targetSearch.focus();
+      }
+    };
+  }
+
+  // Bind Source Search Input Binds
+  sourceSearch.onfocus = () => {
+    renderSourceDropdown(sourceSearch.value);
+  };
+  sourceSearch.oninput = (e) => {
+    renderSourceDropdown(e.target.value);
+  };
+  
+  // Bind Target Search Input Binds
+  targetSearch.onfocus = () => {
+    renderTargetDropdown(targetSearch.value);
+  };
+  targetSearch.oninput = (e) => {
+    renderTargetDropdown(e.target.value);
+  };
+
+  // Hide dropdowns when clicking outside
+  document.addEventListener('click', (e) => {
+    const srcContainer = document.getElementById('source-typeahead-container');
+    const tgtContainer = document.getElementById('target-typeahead-container');
     
-    sourceSel.innerHTML += opt;
-    targetSel.innerHTML += opt;
+    if (srcContainer && !srcContainer.contains(e.target)) {
+      sourceDropdown.classList.add('hide');
+    }
+    if (tgtContainer && !tgtContainer.contains(e.target)) {
+      targetDropdown.classList.add('hide');
+    }
   });
 
-  sourceSel.value = oldSourceVal;
-  targetSel.value = oldTargetVal;
+  let sourceFetchTimeout = null;
+  let targetFetchTimeout = null;
+
+  function capitalizeFirstLetter(string) {
+    if (!string) return '';
+    return string.charAt(0).toUpperCase() + string.slice(1);
+  }
+
+  function renderSourceDropdown(filterText = '') {
+    sourceDropdown.innerHTML = '';
+    const q = filterText.toLowerCase().trim();
+
+    // 1. Search local canvas nodes first
+    const matched = state.allNodes.filter(node => {
+      const name = (node.properties.name || node.id).toLowerCase();
+      const type = getNodeType(node).toLowerCase();
+      return name.includes(q) || type.includes(q);
+    }).sort((a,b) => (a.properties.name || a.id).localeCompare(b.properties.name || b.id));
+
+    renderSourceItems(matched);
+
+    // 2. Fetch database-wide matches via autocomplete API (debounced)
+    clearTimeout(sourceFetchTimeout);
+    if (q.length >= 2) {
+      sourceFetchTimeout = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/autocomplete?q=${encodeURIComponent(q)}`);
+          const suggestions = await res.json();
+          if (Array.isArray(suggestions)) {
+            const localIds = new Set(matched.map(n => n.id));
+            const newSuggestions = suggestions.filter(s => !localIds.has(s.id));
+            
+            if (newSuggestions.length > 0) {
+              const divider = document.createElement('div');
+              divider.className = 'typeahead-divider';
+              divider.style.cssText = 'padding: 6px 12px; font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border-glass); background: rgba(0,0,0,0.1); font-weight: 600; text-transform: uppercase;';
+              divider.textContent = 'Database Matches';
+              sourceDropdown.appendChild(divider);
+
+              renderSourceSuggestions(newSuggestions);
+            }
+          }
+        } catch (err) {
+          console.warn('Typeahead source autocomplete failed:', err);
+        }
+      }, 250);
+    }
+  }
+
+  function renderSourceItems(items) {
+    if (items.length === 0) {
+      sourceDropdown.innerHTML = `<div class="p-2 text-muted text-center" style="font-size:11px;">No entities found locally</div>`;
+      sourceDropdown.classList.remove('hide');
+      return;
+    }
+
+    items.forEach(node => {
+      const name = node.properties.name || node.id;
+      const type = getNodeType(node);
+      
+      const item = document.createElement('div');
+      item.className = 'typeahead-item';
+      if (selectedSourceId === node.id) {
+        item.classList.add('selected');
+      }
+      
+      item.innerHTML = `
+        <span><span class="legend-initial legend-${type.toLowerCase()}" style="width: 14px; height: 14px; font-size: 8px; border-radius: 2px; margin-right: 4px; display: inline-flex; align-items: center; justify-content: center;">${iconMap[type] || 'N'}</span> ${name}</span>
+        <span class="item-type ${type}" style="font-size:9px;">${type}</span>
+      `;
+
+      item.onclick = (e) => {
+        e.stopPropagation();
+        selectedSourceId = node.id;
+        sourceHidden.value = node.id;
+        sourceSearch.value = `[${type}] ${name}`;
+        sourceDropdown.classList.add('hide');
+        
+        if (selectedTargetIds.has(node.id)) {
+          selectedTargetIds.delete(node.id);
+          renderChips();
+        }
+      };
+
+      sourceDropdown.appendChild(item);
+    });
+
+    sourceDropdown.classList.remove('hide');
+  }
+
+  function renderSourceSuggestions(suggestions) {
+    suggestions.forEach(s => {
+      const name = s.name;
+      const type = capitalizeFirstLetter(s.type);
+      
+      const item = document.createElement('div');
+      item.className = 'typeahead-item';
+      
+      item.innerHTML = `
+        <span><span class="legend-initial legend-${type.toLowerCase()}" style="width: 14px; height: 14px; font-size: 8px; border-radius: 2px; margin-right: 4px; display: inline-flex; align-items: center; justify-content: center;">${iconMap[type] || 'N'}</span> ${name}</span>
+        <span class="item-type ${type}" style="font-size:9px;">${type}</span>
+      `;
+
+      item.onclick = (e) => {
+        e.stopPropagation();
+        
+        // Dynamically inject this database node onto active visual graph state
+        const parent = svg.node().parentElement;
+        const newNode = {
+          id: s.id,
+          labels: [type],
+          properties: { id: s.id, name: name }
+        };
+        newNode.x = parent.clientWidth / 2 + (Math.random() - 0.5) * 150;
+        newNode.y = parent.clientHeight / 2 + (Math.random() - 0.5) * 150;
+        
+        if (!state.allNodes.some(n => n.id === s.id)) {
+          state.allNodes.push(newNode);
+          applyGraphFilters();
+        }
+
+        selectedSourceId = s.id;
+        sourceHidden.value = s.id;
+        sourceSearch.value = `[${type}] ${name}`;
+        sourceDropdown.classList.add('hide');
+        
+        if (selectedTargetIds.has(s.id)) {
+          selectedTargetIds.delete(s.id);
+          renderChips();
+        }
+      };
+
+      sourceDropdown.appendChild(item);
+    });
+  }
+
+  function renderTargetDropdown(filterText = '') {
+    targetDropdown.innerHTML = '';
+    const q = filterText.toLowerCase().trim();
+
+    // 1. Search local canvas nodes first
+    const matched = state.allNodes.filter(node => {
+      const name = (node.properties.name || node.id).toLowerCase();
+      const type = getNodeType(node).toLowerCase();
+      return (name.includes(q) || type.includes(q)) && node.id !== selectedSourceId;
+    }).sort((a,b) => (a.properties.name || a.id).localeCompare(b.properties.name || b.id));
+
+    renderTargetItems(matched);
+
+    // 2. Fetch database-wide matches via autocomplete API (debounced)
+    clearTimeout(targetFetchTimeout);
+    if (q.length >= 2) {
+      targetFetchTimeout = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/autocomplete?q=${encodeURIComponent(q)}`);
+          const suggestions = await res.json();
+          if (Array.isArray(suggestions)) {
+            const localIds = new Set(matched.map(n => n.id));
+            const newSuggestions = suggestions.filter(s => !localIds.has(s.id) && s.id !== selectedSourceId);
+            
+            if (newSuggestions.length > 0) {
+              const divider = document.createElement('div');
+              divider.className = 'typeahead-divider';
+              divider.style.cssText = 'padding: 6px 12px; font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border-glass); background: rgba(0,0,0,0.1); font-weight: 600; text-transform: uppercase;';
+              divider.textContent = 'Database Matches';
+              targetDropdown.appendChild(divider);
+
+              renderTargetSuggestions(newSuggestions);
+            }
+          }
+        } catch (err) {
+          console.warn('Typeahead target autocomplete failed:', err);
+        }
+      }, 250);
+    }
+  }
+
+  function renderTargetItems(items) {
+    if (items.length === 0) {
+      targetDropdown.innerHTML = `<div class="p-2 text-muted text-center" style="font-size:11px;">No entities found locally</div>`;
+      targetDropdown.classList.remove('hide');
+      return;
+    }
+
+    items.forEach(node => {
+      const name = node.properties.name || node.id;
+      const type = getNodeType(node);
+      const isChecked = selectedTargetIds.has(node.id);
+
+      const item = document.createElement('div');
+      item.className = 'typeahead-item';
+      if (isChecked) {
+        item.classList.add('selected');
+      }
+
+      item.innerHTML = `
+        <span><span class="legend-initial legend-${type.toLowerCase()}" style="width: 14px; height: 14px; font-size: 8px; border-radius: 2px; margin-right: 4px; display: inline-flex; align-items: center; justify-content: center;">${iconMap[type] || 'N'}</span> ${name}</span>
+        <span style="font-size: 11px;">${isChecked ? '<i class="fa-solid fa-square-check" style="color:var(--accent);"></i>' : '<i class="fa-regular fa-square"></i>'}</span>
+      `;
+
+      item.onclick = (e) => {
+        e.stopPropagation();
+        if (selectedTargetIds.has(node.id)) {
+          selectedTargetIds.delete(node.id);
+        } else {
+          selectedTargetIds.add(node.id);
+        }
+        renderChips();
+        renderTargetDropdown(targetSearch.value);
+        targetSearch.focus();
+      };
+
+      targetDropdown.appendChild(item);
+    });
+
+    targetDropdown.classList.remove('hide');
+  }
+
+  function renderTargetSuggestions(suggestions) {
+    suggestions.forEach(s => {
+      const name = s.name;
+      const type = capitalizeFirstLetter(s.type);
+      const isChecked = selectedTargetIds.has(s.id);
+
+      const item = document.createElement('div');
+      item.className = 'typeahead-item';
+      if (isChecked) {
+        item.classList.add('selected');
+      }
+
+      item.innerHTML = `
+        <span><span class="legend-initial legend-${type.toLowerCase()}" style="width: 14px; height: 14px; font-size: 8px; border-radius: 2px; margin-right: 4px; display: inline-flex; align-items: center; justify-content: center;">${iconMap[type] || 'N'}</span> ${name}</span>
+        <span style="font-size: 11px;">${isChecked ? '<i class="fa-solid fa-square-check" style="color:var(--accent);"></i>' : '<i class="fa-regular fa-square"></i>'}</span>
+      `;
+
+      item.onclick = (e) => {
+        e.stopPropagation();
+
+        // Dynamically inject this database target node onto active visual graph state
+        const parent = svg.node().parentElement;
+        const newNode = {
+          id: s.id,
+          labels: [type],
+          properties: { id: s.id, name: name }
+        };
+        newNode.x = parent.clientWidth / 2 + (Math.random() - 0.5) * 150;
+        newNode.y = parent.clientHeight / 2 + (Math.random() - 0.5) * 150;
+        
+        if (!state.allNodes.some(n => n.id === s.id)) {
+          state.allNodes.push(newNode);
+          applyGraphFilters();
+        }
+
+        if (selectedTargetIds.has(s.id)) {
+          selectedTargetIds.delete(s.id);
+        } else {
+          selectedTargetIds.add(s.id);
+        }
+        renderChips();
+        renderTargetDropdown(targetSearch.value);
+        targetSearch.focus();
+      };
+
+      targetDropdown.appendChild(item);
+    });
+  }
+
+  function renderChips() {
+    // Remove existing chips
+    targetChipsContainer.querySelectorAll('.typeahead-chip').forEach(el => el.remove());
+
+    selectedTargetIds.forEach(id => {
+      const node = state.allNodes.find(n => n.id === id);
+      if (!node) return;
+
+      const chip = document.createElement('span');
+      chip.className = 'typeahead-chip';
+      chip.innerHTML = `
+        <span>${node.properties.name || node.id}</span>
+        <i class="fa-solid fa-xmark chip-remove-icon"></i>
+      `;
+
+      chip.querySelector('.chip-remove-icon').onclick = (e) => {
+        e.stopPropagation();
+        selectedTargetIds.delete(id);
+        renderChips();
+        if (!targetDropdown.classList.contains('hide')) {
+          renderTargetDropdown(targetSearch.value);
+        }
+      };
+
+      targetChipsContainer.insertBefore(chip, targetSearch);
+    });
+  }
 }
 
 // 9. D3 Simulation Drag Actions
@@ -1757,12 +2107,34 @@ window.selectNodeFromId = selectNodeFromId;
 function initCopilotChat() {
   const toggleBtn = document.getElementById('copilot-toggle-btn');
   const closeBtn = document.getElementById('close-copilot-btn');
+  const clearBtn = document.getElementById('clear-copilot-btn');
   const drawer = document.getElementById('copilot-drawer');
   const sendBtn = document.getElementById('copilot-send-btn');
   const chatInput = document.getElementById('copilot-chat-input');
   const chatHistory = document.getElementById('copilot-chat-history');
 
   if (!toggleBtn || !drawer) return;
+
+  // Clear Chat and Context
+  if (clearBtn) {
+    clearBtn.onclick = () => {
+      const greetingBubble = chatHistory.querySelector('.chat-message.assistant');
+      const greetingHtml = greetingBubble ? greetingBubble.innerHTML : '';
+      chatHistory.innerHTML = '';
+      
+      if (greetingHtml) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'chat-message assistant';
+        msgDiv.innerHTML = greetingHtml;
+        chatHistory.appendChild(msgDiv);
+      } else {
+        appendBubble('assistant', 'Hi! I am your interactive **AI Product Knowledge Graph Copilot** 🚀<br><br>I can explain retail concepts, suggest high-margin bundles, and execute visual graph queries.');
+      }
+      
+      showToast('Conversational context cleared!', 'success');
+      chatInput.focus();
+    };
+  }
 
   // Synchronize model selectors in real-time
   const modelSelect = document.getElementById('nlq-model-select');

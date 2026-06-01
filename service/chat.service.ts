@@ -38,8 +38,9 @@ export class ChatService {
 Your job is to read the user's message and decide if answering it requires querying the Neo4j database to fetch node networks and relationships (which renders a visual graph), OR if it's a general conversation/retail strategy question.
 
 Available Mapped APIs:
-1. "/api/nlq" - Call this if the user asks to draw, show, find, or search for products, brands, categories, competitors, substitutes, or bundles in the database (e.g., "find competitors for Pepsi", "show chips complements", "what products are in bakery?").
-2. "reply" - Use this if the user is asking a general question, explaining a retail concept, greeting you, or continuing a conversation that doesn't require loading a new node graph (e.g., "hi", "how does a substitute relationship help?", "explain the chips and dip bundle strategy you just recommended").
+1. "/api/nlq" - Call this if the user asks to draw, show, find, or search for products, brands, categories, competitors, substitutes, or bundles in the database. 
+   - Note: Colloquial questions or follow-ups that ask about specific items (e.g., "what about soda-flavored lip balms?", "do we have any Dr Pepper?", "how about Pepsi rivals?") MUST be routed as "/api/nlq" because answering them requires querying the database to draw the node graph.
+2. "reply" - Use this only if the user is asking a general question, explaining a retail concept, greeting you, or continuing a conversation that doesn't require loading a new node graph (e.g., "hi", "how does a substitute relationship help?", "explain the chips and dip bundle strategy you just recommended").
 
 Formulate your routing decision and return it in this exact JSON schema. Do NOT include markdown code blocks, just return the JSON object:
 {
@@ -64,7 +65,10 @@ Output JSON:`;
 
     // Robust Rule-based Interceptor for common DB query keywords to guarantee database visual traversal
     const lowerMessage = message.toLowerCase();
-    const queryKeywords = ['show', 'find', 'search', 'competitor', 'rival', 'substitute', 'complement', 'bundle', 'products', 'categories', 'brands', 'list'];
+    const queryKeywords = [
+      'show', 'find', 'search', 'competitor', 'rival', 'substitute', 'complement', 'bundle', 'products', 
+      'categories', 'brands', 'list', 'what about', 'how about', 'do we have', 'is there', 'balm', 'smacker', 'soda', 'cola'
+    ];
     const containsQueryKeyword = queryKeywords.some(kw => lowerMessage.includes(kw));
 
     if (containsQueryKeyword && routing.action !== 'api_call') {
