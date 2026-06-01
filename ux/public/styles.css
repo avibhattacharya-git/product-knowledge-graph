@@ -2292,3 +2292,113 @@ body {
   transform: scale(1.1);
 }
 
+/* ==========================================================================
+   12. Interactive Category Relationship Recommendations Styling
+   ========================================================================== */
+
+.recommendation-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.recommendation-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.recommendation-card.selected {
+  background: rgba(168, 85, 247, 0.06);
+  border-color: rgba(168, 85, 247, 0.4);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.15);
+}
+
+.recommendation-card.selected::before {
+  content: '\f00c';
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 11px;
+  color: #a855f7;
+  background: rgba(168, 85, 247, 0.15);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.card-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.card-badge {
+  font-size: 8.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.card-badge.badge-substitute {
+  background: rgba(217, 70, 239, 0.12);
+  color: #f472b6;
+  border: 1px solid rgba(217, 70, 239, 0.25);
+}
+
+.card-badge.badge-complement {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.card-similarity {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.recommendation-card.selected .card-similarity {
+  color: #c084fc;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  padding-right: 20px;
+}
+
+.card-arrow {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.card-rationale {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  margin: 0;
+}
+

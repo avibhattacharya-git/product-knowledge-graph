@@ -28,7 +28,9 @@ const state = {
     PARENT_CATEGORY: true
   },
   physicsEnabled: true,
-  isDrawerExpanded: false
+  isDrawerExpanded: false,
+  selectedRecommendations: new Set(),
+  recommendations: []
 };
 
 // D3 Selections & Simulation
@@ -75,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchBrandsList();
   initCopilotChat();
   initTypeaheadControllers();
+  initRecommendationsController();
 });
 
 // Check postgres & neo4j connection status and counts
@@ -955,6 +958,10 @@ function bindUIEvents() {
       const targetContent = document.getElementById(tabId);
       if (targetContent) {
         targetContent.classList.add('active');
+      }
+
+      if (tabId === 'recommendations-tab') {
+        loadRecommendations();
       }
 
       // 🌟 REFRESH SCREEN: Reset all filters upon tab switching for a fresh interactive canvas context!
@@ -2389,5 +2396,156 @@ function initCopilotChat() {
     });
 
     bubbleContainer.innerHTML = updatedHtml;
+  }
+}
+
+// ==========================================================================
+// 12. Category Relationship Recommendations Controller
+// ==========================================================================
+
+function initRecommendationsController() {
+  const refreshBtn = document.getElementById('refresh-recommendations-btn');
+  const acceptBtn = document.getElementById('accept-recommendations-btn');
+  
+  if (refreshBtn) {
+    refreshBtn.onclick = () => {
+      loadRecommendations();
+    };
+  }
+
+  if (acceptBtn) {
+    acceptBtn.onclick = async () => {
+      if (state.selectedRecommendations.size === 0) {
+        showToast('Please select at least one recommendation to approve.', 'warning');
+        return;
+      }
+
+      acceptBtn.disabled = true;
+      const originalText = acceptBtn.innerHTML;
+      acceptBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Syncing...';
+      
+      const pairsToAccept = [];
+      state.selectedRecommendations.forEach(key => {
+        const item = state.recommendations.find(r => `${r.sourceId}_${r.targetId}` === key);
+        if (item) {
+          pairsToAccept.push({
+            sourceId: item.sourceId,
+            targetId: item.targetId,
+            relationshipType: item.relationshipType,
+            similarity: item.similarity
+          });
+        }
+      });
+
+      try {
+        const res = await fetch('/api/recommendations/accept', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pairs: pairsToAccept })
+        });
+        const data = await res.json();
+        
+        if (data.acceptedCount !== undefined) {
+          showToast(`Successfully accepted & synchronized ${data.acceptedCount} relationship(s)!`, 'success');
+          state.selectedRecommendations.clear();
+          
+          // Re-fetch visual data and status to draw JIT on-screen
+          checkDatabasesStatus();
+          await fetchGraphData();
+          
+          // Refresh recommendations list
+          await loadRecommendations();
+        } else {
+          showToast(`Approve failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+      } catch (err) {
+        showToast('Network error while accepting recommendations.', 'error');
+      } finally {
+        acceptBtn.disabled = false;
+        acceptBtn.innerHTML = originalText;
+      }
+    };
+  }
+}
+
+async function loadRecommendations() {
+  const listContainer = document.getElementById('recommendations-list');
+  const actionBar = document.getElementById('rec-action-bar');
+  const countLabel = document.getElementById('rec-selection-count');
+  
+  if (!listContainer) return;
+
+  listContainer.innerHTML = '<div class="loading-spinner"><i class="fa-solid fa-wand-magic-sparkles fa-spin"></i> Analyzing taxonomy...</div>';
+  if (actionBar) actionBar.classList.add('hide');
+  state.selectedRecommendations.clear();
+
+  try {
+    const res = await fetch('/api/recommendations?limit=15');
+    const data = await res.json();
+    
+    if (Array.isArray(data)) {
+      state.recommendations = data;
+      
+      if (data.length === 0) {
+        listContainer.innerHTML = `
+          <div class="empty-state-card" style="text-align: center; padding: 24px; background: rgba(255, 255, 255, 0.02); border-radius: 8px; border: 1px dashed rgba(255,255,255,0.05);">
+            <i class="fa-solid fa-circle-check" style="font-size: 24px; color: var(--color-success); margin-bottom: 8px;"></i>
+            <h4 style="margin-bottom: 4px; font-size: 13px; font-weight: 600;">Taxonomy Complete</h4>
+            <p style="font-size: 11px; color: var(--text-muted); margin: 0;">All discovered semantic clusters are already persistent in the relationship cache!</p>
+          </div>
+        `;
+        return;
+      }
+
+      listContainer.innerHTML = '';
+      data.forEach((item) => {
+        const key = `${item.sourceId}_${item.targetId}`;
+        const isSelected = state.selectedRecommendations.has(key);
+        const card = document.createElement('div');
+        card.className = `recommendation-card ${isSelected ? 'selected' : ''}`;
+        
+        const badgeClass = item.relationshipType === 'SUBSTITUTE' ? 'badge-substitute' : 'badge-complement';
+        const pctSimilarity = Math.round(item.similarity * 100);
+        
+        card.innerHTML = `
+          <div class="card-top-row">
+            <span class="card-badge ${badgeClass}">${item.relationshipType}</span>
+            <span class="card-similarity">${pctSimilarity}% match</span>
+          </div>
+          <div class="card-title-row">
+            <span class="node-name">${item.sourceName}</span>
+            <i class="fa-solid fa-arrows-h-to-line card-arrow"></i>
+            <span class="node-name">${item.targetName}</span>
+          </div>
+          <p class="card-rationale">${item.rationale}</p>
+        `;
+
+        card.onclick = () => {
+          if (state.selectedRecommendations.has(key)) {
+            state.selectedRecommendations.delete(key);
+            card.classList.remove('selected');
+          } else {
+            state.selectedRecommendations.add(key);
+            card.classList.add('selected');
+          }
+
+          // Update action bar state
+          const selCount = state.selectedRecommendations.size;
+          if (countLabel) countLabel.textContent = `${selCount} selected`;
+          
+          if (selCount > 0) {
+            if (actionBar) actionBar.classList.remove('hide');
+          } else {
+            if (actionBar) actionBar.classList.add('hide');
+          }
+        };
+
+        listContainer.appendChild(card);
+      });
+    } else {
+      listContainer.innerHTML = `<div class="empty-state-card text-danger" style="padding: 16px;">Failed to fetch recommendations: ${data.error || 'Server error'}</div>`;
+    }
+  } catch (err) {
+    listContainer.innerHTML = `<div class="empty-state-card text-danger" style="padding: 16px;">Connection timeout loading recommendations.</div>`;
   }
 }

@@ -69,6 +69,7 @@
           <button class="tab-btn active" data-tab="search-tab"><i class="fa-solid fa-magnifying-glass"></i> Search & Filters</button>
           <button class="tab-btn" data-tab="categories-tab"><span class="legend-initial legend-category" style="width: 16px; height: 16px; font-size: 8px; border-radius: 3px; margin-right: 4px;">C</span> Categories</button>
           <button class="tab-btn" data-tab="brands-tab"><span class="legend-initial legend-brand" style="width: 16px; height: 16px; font-size: 8px; border-radius: 3px; margin-right: 4px;">B</span> Brands</button>
+          <button class="tab-btn" data-tab="recommendations-tab"><i class="fa-solid fa-lightbulb text-gemini"></i> Recs</button>
         </div>
 
         <div class="tab-content active" id="search-tab">
@@ -215,6 +216,32 @@
             <button id="reset-brand-filter" class="btn btn-secondary btn-block btn-sm mt-3 hide">
               <i class="fa-solid fa-undo"></i> Reset Brand Filter
             </button>
+          </div>
+        </div>
+
+        <!-- Recommendations Tab -->
+        <div class="tab-content" id="recommendations-tab">
+          <div class="sidebar-widget">
+            <div class="widget-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h3 style="margin-bottom: 0;">Taxonomy Recommendations</h3>
+              <button id="refresh-recommendations-btn" class="btn btn-secondary btn-xs" style="padding: 4px 8px; font-size: 10px;">
+                <i class="fa-solid fa-sync"></i> Refresh
+              </button>
+            </div>
+            <p class="widget-subtitle">Discover missing category relationships (complements and substitutes) using pgvector semantic clusters. Review and approve pairings to dual-write them to Postgres & Neo4j.</p>
+            
+            <div class="recommendations-list-container" style="max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 4px; margin-top: 12px; margin-bottom: 12px;">
+              <div id="recommendations-list" class="recommendations-deck" style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="loading-spinner"><i class="fa-solid fa-wand-magic-sparkles fa-spin"></i> Analyzing taxonomy...</div>
+              </div>
+            </div>
+            
+            <div class="recommendations-action-bar hide" id="rec-action-bar" style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border-color); background: transparent;">
+              <span class="selection-counter" id="rec-selection-count" style="font-size: 11px; color: var(--text-muted); font-weight: 500;">0 selected</span>
+              <button id="accept-recommendations-btn" class="btn btn-primary btn-sm" style="padding: 6px 12px; font-size: 11px;">
+                <i class="fa-solid fa-check"></i> Approve & Sync
+              </button>
+            </div>
           </div>
         </div>
       </aside>
