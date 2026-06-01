@@ -4,14 +4,19 @@ import { Pool } from 'pg';
 import { Driver } from 'neo4j-driver';
 import { appConfig } from '../../configs/app.config';
 import { ChatService } from '../../service/chat.service';
+import { RecommendationService } from '../../service/recommendation.service';
 
 export class ApiController {
+  private recommendationService: RecommendationService;
+
   constructor(
     private searchOrchestrator: SearchOrchestrator,
     private pgPool: Pool,
     private neoDriver: Driver,
     private chatService: ChatService
-  ) {}
+  ) {
+    this.recommendationService = new RecommendationService(this.pgPool, this.neoDriver);
+  }
 
   async getDbStatus(c: Context) {
     const provider = appConfig.llm.activeProvider;
@@ -248,6 +253,30 @@ export class ApiController {
     try {
       const steps = await this.searchOrchestrator.getProductCategoryPath(productId);
       return c.json({ steps });
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
+
+  async getRecommendations(c: Context) {
+    const limitQuery = c.req.query('limit');
+    const limit = limitQuery ? parseInt(limitQuery, 10) : 10;
+    try {
+      const recommendations = await this.recommendationService.getRecommendations(limit);
+      return c.json(recommendations);
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
+
+  async acceptRecommendations(c: Context) {
+    try {
+      const { pairs } = await c.req.json();
+      if (!pairs || !Array.isArray(pairs)) {
+        return c.json({ error: 'Body parameter "pairs" must be an array of approved recommendations.' }, 400);
+      }
+      const result = await this.recommendationService.acceptRecommendations(pairs);
+      return c.json(result);
     } catch (err: any) {
       return c.json({ error: err.message }, 500);
     }

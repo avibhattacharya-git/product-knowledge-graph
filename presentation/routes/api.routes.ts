@@ -59,5 +59,11 @@ export function createApiRouter(
   // 17. POST /api/chat - Interactive AI Copilot Chat Route
   apiRouter.post('/chat', (c) => apiController.processChat(c));
 
+  // 18. GET /api/recommendations - Missing relationship recommendation engine
+  apiRouter.get('/recommendations', (c) => apiController.getRecommendations(c));
+
+  // 19. POST /api/recommendations/accept - Dual-write approved relationship selections
+  apiRouter.post('/recommendations/accept', (c) => apiController.acceptRecommendations(c));
+
   return apiRouter;
 }
