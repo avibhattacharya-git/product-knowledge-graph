@@ -65,5 +65,11 @@ export function createApiRouter(
   // 19. POST /api/recommendations/accept - Dual-write approved relationship selections
   apiRouter.post('/recommendations/accept', (c) => apiController.acceptRecommendations(c));
 
+  // 20. GET /api/recommendations/brands - Brand competitor recommendation engine
+  apiRouter.get('/recommendations/brands', (c) => apiController.getBrandRecommendations(c));
+
+  // 21. POST /api/recommendations/brands/accept - Dual-write approved brand competitor selections
+  apiRouter.post('/recommendations/brands/accept', (c) => apiController.acceptBrandRecommendations(c));
+
   return apiRouter;
 }

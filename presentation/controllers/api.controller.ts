@@ -281,4 +281,28 @@ export class ApiController {
       return c.json({ error: err.message }, 500);
     }
   }
+
+  async getBrandRecommendations(c: Context) {
+    const limitQuery = c.req.query('limit');
+    const limit = limitQuery ? parseInt(limitQuery, 10) : 10;
+    try {
+      const recommendations = await this.recommendationService.getBrandRecommendations(limit);
+      return c.json(recommendations);
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
+
+  async acceptBrandRecommendations(c: Context) {
+    try {
+      const { pairs } = await c.req.json();
+      if (!pairs || !Array.isArray(pairs)) {
+        return c.json({ error: 'Body parameter "pairs" must be an array of approved brand recommendations.' }, 400);
+      }
+      const result = await this.recommendationService.acceptBrandRecommendations(pairs);
+      return c.json(result);
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
 }

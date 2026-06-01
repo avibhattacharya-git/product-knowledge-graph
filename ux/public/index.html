@@ -223,12 +223,19 @@
         <div class="tab-content" id="recommendations-tab">
           <div class="sidebar-widget">
             <div class="widget-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <h3 style="margin-bottom: 0;">Taxonomy Recommendations</h3>
+              <h3 style="margin-bottom: 0;">Recommendations</h3>
               <button id="refresh-recommendations-btn" class="btn btn-secondary btn-xs" style="padding: 4px 8px; font-size: 10px;">
                 <i class="fa-solid fa-sync"></i> Refresh
               </button>
             </div>
-            <p class="widget-subtitle">Discover missing category relationships (complements and substitutes) using pgvector semantic clusters. Review and approve pairings to dual-write them to Postgres & Neo4j.</p>
+            
+            <!-- Recommendations Mode Toggles -->
+            <div class="recommendations-toggle-bar" style="display: flex; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-glass); border-radius: 8px; padding: 3px; margin-bottom: 12px; gap: 4px;">
+              <button class="rec-toggle-btn active" id="rec-toggle-cats-btn" style="flex: 1; background: none; border: none; color: var(--text-secondary); padding: 6px; border-radius: 6px; font-family: var(--font-display); font-size: 10px; font-weight: 600; cursor: pointer; transition: var(--transition-smooth); text-align: center;">Category Map</button>
+              <button class="rec-toggle-btn" id="rec-toggle-brands-btn" style="flex: 1; background: none; border: none; color: var(--text-secondary); padding: 6px; border-radius: 6px; font-family: var(--font-display); font-size: 10px; font-weight: 600; cursor: pointer; transition: var(--transition-smooth); text-align: center;">Brand Rivals</button>
+            </div>
+            
+            <p class="widget-subtitle" id="rec-widget-subtitle">Discover missing category relationships (complements and substitutes) purely from graph Jaccard overlaps. Review and approve pairings to merge them in Neo4j.</p>
             
             <div class="recommendations-list-container" style="max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 4px; margin-top: 12px; margin-bottom: 12px;">
               <div id="recommendations-list" class="recommendations-deck" style="display: flex; flex-direction: column; gap: 10px;">
