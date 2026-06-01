@@ -49,7 +49,7 @@
         </div>
         <div class="db-status-item" id="gemini-status">
           <i class="fa-solid fa-wand-magic-sparkles status-icon"></i>
-          <span>Gemini NLQ:</span>
+          <span>AI NLQ:</span>
           <span class="status-indicator offline" id="gemini-indicator">CONNECTING</span>
         </div>
         <button id="sync-db-btn" class="btn btn-secondary btn-sm" title="Sync PostgreSQL view to Neo4j Graph Database">
@@ -78,7 +78,7 @@
             <h3>Semantic Search Console</h3>
             <div class="search-mode-toggle">
               <button class="mode-toggle-btn active" id="mode-keyword-btn"><i class="fa-solid fa-filter"></i> Keyword</button>
-              <button class="mode-toggle-btn" id="mode-gemini-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> Gemini AI (NLQ)</button>
+              <button class="mode-toggle-btn" id="mode-gemini-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> AI NLQ</button>
             </div>
             
             <!-- Active Model Selection Dropdown -->
@@ -93,7 +93,7 @@
             <div class="gemini-warning-box hide" id="gemini-warning-alert">
               <i class="fa-solid fa-circle-exclamation warning-alert-icon"></i>
               <div class="warning-alert-content">
-                <span>Gemini API is disabled for NLQ. Searches will execute via keyword fallback parser.</span>
+                <span>AI API is disabled for NLQ. Searches will execute via keyword fallback parser.</span>
               </div>
             </div>
 
@@ -284,7 +284,7 @@
         <div class="canvas-overlay hide" id="gemini-loading-overlay">
           <div class="overlay-card">
             <i class="fa-solid fa-wand-magic-sparkles sparkle-loader"></i>
-            <h3>Gemini AI is analyzing the knowledge graph...</h3>
+            <h3>AI is analyzing the knowledge graph...</h3>
             <p>Translating natural language into optimized Cypher queries</p>
           </div>
         </div>
@@ -294,7 +294,7 @@
           <div class="badge-main-row">
             <div class="badge-text">
               <i class="fa-solid fa-sparkles text-gemini mr-1"></i>
-              <span>Gemini Cypher: <code id="cypher-preview-code">MATCH (n) ...</code></span>
+              <span>AI Cypher: <code id="cypher-preview-code">MATCH (n) ...</code></span>
             </div>
             <button id="cypher-badge-run-btn" class="btn btn-gemini btn-xs"><i class="fa-solid fa-play"></i> Run in Sandbox</button>
           </div>
