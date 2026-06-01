@@ -2323,13 +2323,11 @@ body {
 }
 
 .recommendation-card.selected::before {
-  content: '\f00c';
-  font-family: 'Font Awesome 6 Free';
-  font-weight: 900;
+  content: '✔';
   position: absolute;
   top: 10px;
   right: 12px;
-  font-size: 11px;
+  font-size: 10px;
   color: #a855f7;
   background: rgba(168, 85, 247, 0.15);
   width: 18px;
@@ -2377,6 +2375,7 @@ body {
 
 .recommendation-card.selected .card-similarity {
   color: #c084fc;
+  margin-right: 24px;
 }
 
 .card-title-row {
