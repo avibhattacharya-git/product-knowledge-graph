@@ -128,8 +128,30 @@ async function checkDatabasesStatus() {
       const isLlmActive = llm.apiKeyPresent && llm.nlqEnabled;
       state.geminiEnabled = isLlmActive;
       
+      const providerName = llm.activeProvider.toUpperCase();
+      const capitalizedProvider = llm.activeProvider === 'anthropic' ? 'Claude' 
+                                : llm.activeProvider === 'openai' ? 'OpenAI' 
+                                : 'Gemini';
+
+      // Dynamically align UX headers and descriptions to match active AI provider
+      const statusLabel = document.querySelector('#gemini-status span');
+      if (statusLabel) statusLabel.textContent = `${capitalizedProvider} NLQ:`;
+
+      const modeBtn = document.getElementById('mode-gemini-btn');
+      if (modeBtn) modeBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> ${capitalizedProvider} AI (NLQ)`;
+
+      const warningAlertSpan = document.querySelector('#gemini-warning-alert span');
+      if (warningAlertSpan) warningAlertSpan.textContent = `${capitalizedProvider} API is disabled for NLQ. Searches will execute via keyword fallback parser.`;
+
+      const loadingHeader = document.querySelector('#gemini-loading-overlay h3');
+      if (loadingHeader) loadingHeader.textContent = `${capitalizedProvider} AI is analyzing the knowledge graph...`;
+
+      const previewBadgeSpan = document.querySelector('#cypher-preview-badge .badge-text span');
+      if (previewBadgeSpan) {
+        previewBadgeSpan.innerHTML = `${capitalizedProvider} Cypher: <code id="cypher-preview-code">${state.geminiCypher || 'MATCH (n) ...'}</code>`;
+      }
+
       if (geminiInd) {
-        const providerName = llm.activeProvider.toUpperCase();
         if (isLlmActive) {
           geminiInd.textContent = `${providerName} ONLINE`;
           geminiInd.className = 'status-indicator online';
