@@ -93,9 +93,10 @@ console.log(`\n======================================================`);
 console.log(`  Hono API Server listening on port ${appConfig.port}`);
 console.log(`======================================================\n`);
 
-// Start server natively on Bun by exporting app configurations
+// Start server natively on Bun by exporting app configurations with extended timeouts
 export default {
   port: appConfig.port,
-  fetch: app.fetch
+  fetch: app.fetch,
+  idleTimeout: 255
 };
 

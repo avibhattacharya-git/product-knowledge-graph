@@ -74,16 +74,20 @@ export class ApiController {
         await session.run('RETURN 1');
         status.neo4j.connected = true;
 
-        const nodeCounts = await session.run('MATCH (n) RETURN labels(n)[0] as label, count(n) as count');
-        nodeCounts.records.forEach(rec => {
-          const label = rec.get('label') || 'Unlabeled';
-          status.neo4j.counts[label] = rec.get('count').toInt();
-        });
+        const productsRes = await session.run('MATCH (p:Product) RETURN count(p) as count');
+        const brandsRes = await session.run('MATCH (b:Brand) RETURN count(b) as count');
+        const categoriesRes = await session.run('MATCH (c:Category) RETURN count(c) as count');
 
-        const edgeCounts = await session.run('MATCH ()-[r]->() RETURN type(r) as type, count(r) as count');
-        edgeCounts.records.forEach(rec => {
-          status.neo4j.counts[rec.get('type')] = rec.get('count').toInt();
-        });
+        const getCountVal = (res: any) => {
+          const rec = res.records[0];
+          if (!rec) return 0;
+          const val = rec.get('count');
+          return val.toInt ? val.toInt() : Number(val);
+        };
+
+        status.neo4j.counts['Product'] = getCountVal(productsRes);
+        status.neo4j.counts['Brand'] = getCountVal(brandsRes);
+        status.neo4j.counts['Category'] = getCountVal(categoriesRes);
       } finally {
         await session.close();
       }
