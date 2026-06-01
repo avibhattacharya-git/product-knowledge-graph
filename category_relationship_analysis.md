@@ -77,26 +77,68 @@ To optimize conversational search and basket-building accuracy, we should seed t
 
 ## 💻 Automated Seeding Cypher Script
 
-Here is an optimized Cypher blueprint script to instantly establish these high-value department-level complement structures in the graph. You can run this directly in the Graph Terminal:
+Here is an optimized Cypher blueprint script to instantly establish all 10 high-value cross-department relationship structures in the graph. You can run this directly in the Graph Terminal:
 
 ```cypher
-// 1. Establish Diapers & Baby Wipes Complementary Relationship
+// 1. Baking ↔ Dairy Complements
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "baking"
+MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "dairy" OR toLower(c2.name) CONTAINS "milk"
+MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.86
+MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.86;
+
+// 2. Meat, Seafood, & Poultry ↔ Produce Complements
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "meat" OR toLower(c1.name) CONTAINS "seafood" OR toLower(c1.name) CONTAINS "poultry"
+MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "produce" OR toLower(c2.name) CONTAINS "vegetable"
+MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.88
+MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.88;
+
+// 3. Spirits ↔ Beverages / Carbonated Mixers Complements
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "spirits" OR toLower(c1.name) CONTAINS "alcohol"
+MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "soda" OR toLower(c2.name) CONTAINS "seltzer" OR toLower(c2.name) CONTAINS "beverages"
+MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.88
+MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.88;
+
+// 4. Home Cleaning Products ↔ Paper Goods Complements
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "cleaning" OR toLower(c1.name) CONTAINS "household cleaners"
+MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "paper" OR toLower(c2.name) CONTAINS "bath tissue"
+MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.82
+MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.82;
+
+// 5. Cosmetics ↔ Makeup Accessories Compatibility
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "cosmetics" OR toLower(c1.name) CONTAINS "makeup"
+MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "accessories" OR toLower(c2.name) CONTAINS "brush"
+MERGE (c1)-[r1:COMPATIBLE_WITH]->(c2) SET r1.similarity = 0.90
+MERGE (c2)-[r2:COMPATIBLE_WITH]->(c1) SET r2.similarity = 0.90;
+
+// 6. Hair Color ↔ Hair Care (Shampoo) Complements
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "hair color" OR toLower(c1.name) CONTAINS "dye"
+MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "shampoo" OR toLower(c2.name) CONTAINS "hair care"
+MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.84
+MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.84;
+
+// 7. Automotive Cleaners ↔ Home Goods (Towels) Compatibility
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "automotive cleaner" OR toLower(c1.name) CONTAINS "auto wash"
+MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "towel" OR toLower(c2.name) CONTAINS "home goods"
+MERGE (c1)-[r1:COMPATIBLE_WITH]->(c2) SET r1.similarity = 0.80
+MERGE (c2)-[r2:COMPATIBLE_WITH]->(c1) SET r2.similarity = 0.80;
+
+// 8. Diapers ↔ Baby Wipes Complements
 MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "diaper" OR toLower(c1.name) CONTAINS "baby care"
 MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "wipe" OR toLower(c2.name) CONTAINS "baby accessories"
 MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.95
 MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.95;
 
-// 2. Establish Spirits & Carbonated Beverage Mixers
-MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "spirits" OR toLower(c1.name) CONTAINS "alcohol"
-MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "soda" OR toLower(c2.name) CONTAINS "seltzer"
-MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.88
-MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.88;
+// 9. Organic Food Items ↔ Traditional Food Items Substitutions
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "organic"
+MATCH (c2:Category) WHERE NOT toLower(c2.name) CONTAINS "organic" AND (toLower(c2.name) CONTAINS "food" OR toLower(c2.name) CONTAINS "produce")
+MERGE (c1)-[r1:SUBSTITUTE_CATEGORY]->(c2) SET r1.similarity = 0.85
+MERGE (c2)-[r2:SUBSTITUTE_CATEGORY]->(c1) SET r2.similarity = 0.85;
 
-// 3. Establish Baking & Dairy Complements
-MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "baking"
-MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "dairy" OR toLower(c2.name) CONTAINS "milk"
-MERGE (c1)-[r1:COMPLEMENTARY_TO]->(c2) SET r1.similarity = 0.86
-MERGE (c2)-[r2:COMPLEMENTARY_TO]->(c1) SET r2.similarity = 0.86;
+// 10. Gluten-Free Baking ↔ Traditional Baking Substitutions
+MATCH (c1:Category) WHERE toLower(c1.name) CONTAINS "gluten free" OR toLower(c1.name) CONTAINS "gf"
+MATCH (c2:Category) WHERE toLower(c2.name) CONTAINS "baking" AND NOT toLower(c2.name) CONTAINS "gluten free"
+MERGE (c1)-[r1:SUBSTITUTE_CATEGORY]->(c2) SET r1.similarity = 0.88
+MERGE (c2)-[r2:SUBSTITUTE_CATEGORY]->(c1) SET r2.similarity = 0.88;
 ```
 
 ---
