@@ -11,6 +11,7 @@ export interface CategoryRecommendation {
   relationshipType: 'COMPLEMENT' | 'SUBSTITUTE';
   neo4jType: 'COMPLEMENTARY_TO' | 'SUBSTITUTE_CATEGORY';
   similarity: number;
+  confidence: number;
   rationale: string;
 }
 
@@ -30,6 +31,7 @@ export interface BrandRecommendation {
   totalVolume: number;
   sharedCategories: Array<{ categoryName: string }>;
   similarity: number;
+  confidence: number;
   rationale: string;
 }
 
@@ -136,6 +138,7 @@ export class RecommendationService {
              c2Data.category AS c2, c2Data.parent AS p2, c2Data.brandIds AS c2Brands
         WHERE id(c1) < id(c2) AND p1 = p2
           AND NOT (c1)-[:SUBSTITUTE_CATEGORY]-(c2)
+          AND NOT (c1)-[:COMPLEMENTARY_TO]-(c2)
         WITH c1, c2, p1,
              [x IN c1Brands WHERE x IN c2Brands] AS intersectionBrands,
              c1Brands, c2Brands
@@ -167,6 +170,7 @@ export class RecommendationService {
              c2Data.category AS c2, c2Data.parent AS p2, c2Data.brandIds AS c2Brands
         WHERE id(c1) < id(c2) AND p1 <> p2
           AND NOT (c1)-[:COMPLEMENTARY_TO]-(c2)
+          AND NOT (c1)-[:SUBSTITUTE_CATEGORY]-(c2)
         WITH c1, c2, p1, p2,
              [x IN c1Brands WHERE x IN c2Brands] AS intersectionBrands,
              c1Brands, c2Brands
@@ -194,6 +198,8 @@ export class RecommendationService {
       const rawCandidates: any[] = [];
 
       subRes.records.forEach(rec => {
+        const simVal = rec.get('similarity');
+        const similarity = typeof simVal === 'number' ? simVal : (simVal && typeof simVal.toNumber === 'function' ? simVal.toNumber() : Number(simVal));
         rawCandidates.push({
           sourceId: rec.get('sourceId'),
           sourceName: rec.get('sourceName'),
@@ -201,12 +207,14 @@ export class RecommendationService {
           targetName: rec.get('targetName'),
           relationshipType: rec.get('relationshipType'),
           neo4jType: rec.get('neo4jType'),
-          similarity: rec.get('similarity'),
+          similarity,
           aisleName: rec.get('aisleName')
         });
       });
 
       compRes.records.forEach(rec => {
+        const simVal = rec.get('similarity');
+        const similarity = typeof simVal === 'number' ? simVal : (simVal && typeof simVal.toNumber === 'function' ? simVal.toNumber() : Number(simVal));
         rawCandidates.push({
           sourceId: rec.get('sourceId'),
           sourceName: rec.get('sourceName'),
@@ -214,7 +222,7 @@ export class RecommendationService {
           targetName: rec.get('targetName'),
           relationshipType: rec.get('relationshipType'),
           neo4jType: rec.get('neo4jType'),
-          similarity: rec.get('similarity'),
+          similarity,
           dept1: rec.get('dept1'),
           dept2: rec.get('dept2')
         });
@@ -257,6 +265,7 @@ We have identified candidate category relationship recommendations (substitutes 
 Your task is to:
 1. Filter out/Prune any candidate pairings that are noisy or illogical in a retail environment (e.g. mapping "Batteries" as a companion to "Cereal" just because a brand made both).
 2. For each VALID recommendation, write a highly compelling, context-aware, creative marketing rationale (max 2 sentences) describing why they represent a great substitute or companion cross-shop. Do NOT use generic template formulas. Write natural retail copy.
+3. For each VALID recommendation, assign a semantic confidence score (between 0.0 and 1.0) indicating how logically sound and strong this pairing is as a retail companion or substitute.
 
 Candidates:
 ${JSON.stringify(promptCandidates, null, 2)}
@@ -269,7 +278,7 @@ JSON structure:
       "sourceId": "...",
       "targetId": "...",
       "relationshipType": "COMPLEMENT" or "SUBSTITUTE",
-      "similarity": 0.85,
+      "confidence": 0.85,
       "rationale": "Compelling custom retail rationale..."
     }
   ]
@@ -281,11 +290,11 @@ JSON structure:
         const resultObj = JSON.parse(cleanedText);
 
         if (resultObj && Array.isArray(resultObj.validated)) {
-          const validatedMap = new Map<string, { similarity: number; rationale: string }>();
+          const validatedMap = new Map<string, { confidence: number; rationale: string }>();
           resultObj.validated.forEach((item: any) => {
             const key = `${item.sourceId}_${item.targetId}`;
             validatedMap.set(key, {
-              similarity: typeof item.similarity === 'number' ? item.similarity : 0.80,
+              confidence: typeof item.confidence === 'number' ? item.confidence : (typeof item.similarity === 'number' ? item.similarity : 0.80),
               rationale: String(item.rationale)
             });
           });
@@ -302,7 +311,8 @@ JSON structure:
                 targetName: c.targetName,
                 relationshipType: c.relationshipType,
                 neo4jType: c.neo4jType,
-                similarity: enriched.similarity,
+                similarity: Math.round(c.similarity * 100) / 100, // Retain original Jaccard similarity
+                confidence: enriched.confidence,                  // LLM judgment score (semantic confidence)
                 rationale: enriched.rationale
               };
             });
@@ -326,6 +336,7 @@ JSON structure:
             relationshipType: c.relationshipType,
             neo4jType: c.neo4jType,
             similarity: Math.round(c.similarity * 100) / 100,
+            confidence: 0.80, // Default 0.80 semantic confidence
             rationale
           };
         });
@@ -418,7 +429,7 @@ JSON structure:
         WITH b, COUNT { (b)<-[:MANUFACTURED_BY]-() } AS degree
         ORDER BY degree DESC
         LIMIT 100
-        MATCH (b)<-[:MANUFACTURED_BY]-(p:Product)-[:BELONGS_TO]->(c:Category {level: 2})
+        MATCH (b)-[:OPERATES_IN]->(c:Category {level: 2})
         WITH b, degree, collect(DISTINCT id(c)) AS catIds, count(DISTINCT c) AS catCount
         WHERE catCount > 0
         WITH collect({brand: b, brandId: id(b), degree: degree, catIds: catIds, catCount: catCount}) AS brandProfiles
@@ -452,6 +463,8 @@ JSON structure:
         const rawCats = rec.get('sharedCategories') || [];
         // deduplicate shared categories dynamically
         const uniqueCats = Array.from(new Map(rawCats.map((item: any) => [item.categoryName, item])).values()) as any[];
+        const simVal = rec.get('similarity');
+        const similarity = typeof simVal === 'number' ? simVal : (simVal && typeof simVal.toNumber === 'function' ? simVal.toNumber() : Number(simVal));
         return {
           brand1Id: rec.get('brand1_id'),
           brand1Name: rec.get('brand1_name'),
@@ -460,7 +473,7 @@ JSON structure:
           sharedCount: rec.get('sharedCount').toInt ? rec.get('sharedCount').toInt() : Number(rec.get('sharedCount')),
           totalVolume: rec.get('totalVolume').toInt ? rec.get('totalVolume').toInt() : Number(rec.get('totalVolume')),
           sharedCategories: uniqueCats,
-          similarity: rec.get('similarity')
+          similarity
         };
       });
 
@@ -496,6 +509,7 @@ We have identified candidate brand competitor pairings based on category overlap
 Your task is to:
 1. Filter out/Prune any brand pairs that are not true direct competitors in the market (e.g. one brand is a budget tool company and the other is a premium cosmetics brand, even if they share a generic category).
 2. For each VALID competitor brand pairing, write a highly compelling, context-aware retail intelligence rationale (max 2 sentences) describing their market rivalry, price tiers, or overlapping customer demographics. Do NOT use generic template formulas. Write custom, professional retail copy.
+3. For each VALID competitor brand pairing, assign a semantic confidence score (between 0.0 and 1.0) indicating how strongly they compete in the retail market.
 
 Candidates:
 ${JSON.stringify(promptCandidates, null, 2)}
@@ -507,7 +521,7 @@ JSON structure:
     {
       "brand1Id": "...",
       "brand2Id": "...",
-      "similarity": 0.85,
+      "confidence": 0.85,
       "rationale": "Direct competitor brand rationale..."
     }
   ]
@@ -519,11 +533,11 @@ JSON structure:
         const resultObj = JSON.parse(cleanedText);
 
         if (resultObj && Array.isArray(resultObj.validated)) {
-          const validatedMap = new Map<string, { similarity: number; rationale: string }>();
+          const validatedMap = new Map<string, { confidence: number; rationale: string }>();
           resultObj.validated.forEach((item: any) => {
             const key = `${item.brand1Id}_${item.brand2Id}`;
             validatedMap.set(key, {
-              similarity: typeof item.similarity === 'number' ? item.similarity : 0.80,
+              confidence: typeof item.confidence === 'number' ? item.confidence : (typeof item.similarity === 'number' ? item.similarity : 0.80),
               rationale: String(item.rationale)
             });
           });
@@ -540,7 +554,8 @@ JSON structure:
                 sharedCount: c.sharedCount,
                 totalVolume: c.totalVolume,
                 sharedCategories: c.sharedCategories,
-                similarity: enriched.similarity,
+                similarity: Math.round(c.similarity * 100) / 100, // Retain original Jaccard similarity
+                confidence: enriched.confidence,                  // LLM judgment score (semantic confidence)
                 rationale: enriched.rationale
               };
             });
@@ -564,6 +579,7 @@ JSON structure:
             totalVolume: c.totalVolume,
             sharedCategories: c.sharedCategories,
             similarity: Math.round(c.similarity * 100) / 100,
+            confidence: 0.80, // Default 0.80 semantic confidence
             rationale
           };
         });

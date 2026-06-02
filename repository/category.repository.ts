@@ -28,12 +28,12 @@ export class CategoryRepository {
     try {
       const subResult = await session.run(`
         MATCH (c:Category {id: $id})-[:SUBSTITUTE_CATEGORY]-(sub:Category)
-        RETURN sub.id AS id, sub.name AS name
+        RETURN DISTINCT sub.id AS id, sub.name AS name
       `, { id: categoryId });
       
       const compResult = await session.run(`
         MATCH (c:Category {id: $id})-[:COMPLEMENTARY_TO]-(comp:Category)
-        RETURN comp.id AS id, comp.name AS name
+        RETURN DISTINCT comp.id AS id, comp.name AS name
       `, { id: categoryId });
       
       const substitutes = subResult.records.map(rec => CategoryMapper.toDTO(rec));

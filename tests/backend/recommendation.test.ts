@@ -11,7 +11,7 @@ mock.module('../../service/llm.service', () => {
               {
                 brand1Id: 'brand_louisiana',
                 brand2Id: 'brand_mccormick',
-                similarity: 0.90,
+                confidence: 0.90,
                 rationale: 'Mocked brand competitor rationale between Louisiana Fish Fry and McCormick.'
               }
             ]
@@ -23,14 +23,14 @@ mock.module('../../service/llm.service', () => {
               sourceId: '303',
               targetId: '404',
               relationshipType: 'SUBSTITUTE',
-              similarity: 0.95,
+              confidence: 0.95,
               rationale: 'Mocked substitute rationale between Organic Milk and Whole Milk.'
             },
             {
               sourceId: '101',
               targetId: '202',
               relationshipType: 'COMPLEMENT',
-              similarity: 0.85,
+              confidence: 0.85,
               rationale: 'Mocked complement rationale between Pancake Mix and Maple Syrup.'
             }
           ]
@@ -70,7 +70,7 @@ describe('Category & Brand Competitor Recommendation Engine - Pure Graph Tests',
 
     const mockNeoSession = {
       run: mock((cypher: string, params?: any) => {
-        if (cypher.includes('PARENT_CATEGORY') && cypher.includes('SUBSTITUTE')) {
+        if (cypher.includes("'SUBSTITUTE' AS relationshipType")) {
           return Promise.resolve({
             records: [
               createMockRecord({
@@ -85,7 +85,7 @@ describe('Category & Brand Competitor Recommendation Engine - Pure Graph Tests',
               })
             ]
           });
-        } else if (cypher.includes('PARENT_CATEGORY') && cypher.includes('COMPLEMENT')) {
+        } else if (cypher.includes("'COMPLEMENT' AS relationshipType")) {
           return Promise.resolve({
             records: [
               createMockRecord({
@@ -101,7 +101,7 @@ describe('Category & Brand Competitor Recommendation Engine - Pure Graph Tests',
               })
             ]
           });
-        } else if (cypher.includes('MANUFACTURED_BY') && cypher.includes('COMPETES_WITH')) {
+        } else if (cypher.includes('OPERATES_IN') && cypher.includes('COMPETES_WITH')) {
           return Promise.resolve({
             records: [
               createMockRecord({
@@ -157,6 +157,7 @@ describe('Category & Brand Competitor Recommendation Engine - Pure Graph Tests',
     expect(substitute.relationshipType).toBe('SUBSTITUTE');
     expect(substitute.neo4jType).toBe('SUBSTITUTE_CATEGORY');
     expect(substitute.similarity).toBe(0.95);
+    expect(substitute.confidence).toBe(0.95);
     expect(substitute.rationale).toContain('Organic Milk');
 
     // Check complement pair (Baking ↔ Dairy)
@@ -168,6 +169,7 @@ describe('Category & Brand Competitor Recommendation Engine - Pure Graph Tests',
     expect(complement.relationshipType).toBe('COMPLEMENT');
     expect(complement.neo4jType).toBe('COMPLEMENTARY_TO');
     expect(complement.similarity).toBe(0.85);
+    expect(complement.confidence).toBe(0.85);
   });
 
   test('RecommendationService.acceptRecommendations merges graph relationship edges in Neo4j', async () => {
@@ -203,6 +205,7 @@ describe('Category & Brand Competitor Recommendation Engine - Pure Graph Tests',
     expect(rival.brand2Name).toBe('McCormick');
     expect(rival.sharedCount).toBe(1);
     expect(rival.similarity).toBe(0.90);
+    expect(rival.confidence).toBe(0.90);
     expect(rival.rationale).toContain('Louisiana Fish Fry');
   });
 

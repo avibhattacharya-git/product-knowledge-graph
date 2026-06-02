@@ -25,12 +25,18 @@ const state = {
     COMPLEMENTARY_TO: true,
     MANUFACTURED_BY: true,
     BELONGS_TO: true,
-    PARENT_CATEGORY: true
+    PARENT_CATEGORY: true,
+    OPERATES_IN: true
   },
   physicsEnabled: true,
   isDrawerExpanded: false,
   selectedRecommendations: new Set(),
-  recommendations: []
+  recommendations: [],
+  activeRecPair: null,
+  activeFilterHighlightId: null,
+  isServerSearched: false,
+  categories: [],
+  expandedCategories: new Set()
 };
 
 // D3 Selections & Simulation
@@ -212,7 +218,7 @@ function initD3Canvas() {
 
   // SVG Marker Defs for link direction arrows
   const defs = svg.append('defs');
-  const relTypes = ['COMPETES_WITH', 'SUBSTITUTE_FOR', 'COMPLEMENTARY_TO', 'MANUFACTURED_BY', 'BELONGS_TO', 'PARENT_CATEGORY'];
+  const relTypes = ['COMPETES_WITH', 'SUBSTITUTE_FOR', 'COMPLEMENTARY_TO', 'MANUFACTURED_BY', 'BELONGS_TO', 'PARENT_CATEGORY', 'OPERATES_IN'];
   
   relTypes.forEach(type => {
     defs.append('marker')
@@ -256,6 +262,7 @@ function getLinkColor(type) {
   if (type === 'MANUFACTURED_BY') return 'rgba(6, 182, 212, 0.45)';
   if (type === 'BELONGS_TO') return 'rgba(217, 70, 239, 0.4)';
   if (type === 'PARENT_CATEGORY') return 'rgba(217, 70, 239, 0.25)';
+  if (type === 'OPERATES_IN') return 'rgba(251, 146, 60, 0.65)';
   return 'rgba(255,255,255,0.15)';
 }
 
@@ -269,6 +276,7 @@ async function fetchGraphData() {
     state.allLinks = graph.links;
 
     console.log(`Loaded Graph: ${state.allNodes.length} nodes, ${state.allLinks.length} links.`);
+    state.isServerSearched = false;
     applyGraphFilters();
     populateFormSelects();
   } catch (err) {
@@ -279,6 +287,10 @@ async function fetchGraphData() {
 // 4. Ingestion Filter & Render Loop
 function applyGraphFilters() {
   const getLinkId = (endpoint) => (endpoint && typeof endpoint === 'object') ? endpoint.id : endpoint;
+  const getNodePropertyId = (internalId) => {
+    const node = state.allNodes.find(n => n.id === internalId);
+    return node ? (node.properties.id || node.id) : internalId;
+  };
 
   // A. Node Filtering
   state.filteredNodes = state.allNodes.filter(node => {
@@ -288,7 +300,7 @@ function applyGraphFilters() {
     if (state.filters[label] !== undefined && !state.filters[label]) return false;
 
     // Check search term query
-    if (state.activeSearchQuery) {
+    if (state.activeSearchQuery && !state.isServerSearched) {
       const q = state.activeSearchQuery.toLowerCase();
       const name = (node.properties.name || '').toLowerCase();
       const brand = (node.properties.brand || '').toLowerCase();
@@ -296,28 +308,90 @@ function applyGraphFilters() {
       if (!name.includes(q) && !brand.includes(q) && !gtin.includes(q)) return false;
     }
 
-    // Check Category Explorer focus path
-    if (state.activeCategoryFilterId && label === 'Product') {
-      const belongs = state.allLinks.some(link => {
-        const srcId = getLinkId(link.source);
-        const tgtId = getLinkId(link.target);
-        return srcId === node.id && 
-               link.type === 'BELONGS_TO' && 
-               tgtId === state.activeCategoryFilterId;
-      });
-      if (!belongs) return false;
+    // Check Category Explorer focus path (Products, Categories, and Brands)
+    if (state.activeCategoryFilterId) {
+      const allowedCategoryIds = getCategoryDescendants(state.activeCategoryFilterId);
+      
+      if (label === 'Product') {
+        const belongs = state.allLinks.some(link => {
+          const srcId = getLinkId(link.source);
+          const tgtId = getLinkId(link.target);
+          if (srcId === node.id && link.type === 'BELONGS_TO') {
+            const categoryPropId = getNodePropertyId(tgtId);
+            return allowedCategoryIds.has(String(categoryPropId));
+          }
+          return false;
+        });
+        if (!belongs) return false;
+      }
+      
+      if (label === 'Category') {
+        const nodePropId = node.properties.id || node.id;
+        if (!allowedCategoryIds.has(String(nodePropId))) return false;
+      }
+      
+      if (label === 'Brand') {
+        const hasValidProduct = state.allLinks.some(link => {
+          const srcId = getLinkId(link.source);
+          const tgtId = getLinkId(link.target);
+          if (link.type === 'MANUFACTURED_BY' && tgtId === node.id) {
+            // Check if this product (srcId) belongs to any allowed category
+            return state.allLinks.some(bLink => {
+              const bSrcId = getLinkId(bLink.source);
+              const bTgtId = getLinkId(bLink.target);
+              if (bSrcId === srcId && bLink.type === 'BELONGS_TO') {
+                const categoryPropId = getNodePropertyId(bTgtId);
+                return allowedCategoryIds.has(String(categoryPropId));
+              }
+              return false;
+            });
+          }
+          return false;
+        });
+        if (!hasValidProduct) return false;
+      }
     }
 
     // Check Brand Explorer focus path
-    if (state.activeBrandFilterId && label === 'Product') {
-      const manufactures = state.allLinks.some(link => {
-        const srcId = getLinkId(link.source);
-        const tgtId = getLinkId(link.target);
-        return srcId === node.id && 
-               link.type === 'MANUFACTURED_BY' && 
-               tgtId === state.activeBrandFilterId;
-      });
-      if (!manufactures) return false;
+    if (state.activeBrandFilterId) {
+      if (label === 'Product') {
+        const manufactures = state.allLinks.some(link => {
+          const srcId = getLinkId(link.source);
+          const tgtId = getLinkId(link.target);
+          if (srcId === node.id && link.type === 'MANUFACTURED_BY') {
+            const brandPropId = getNodePropertyId(tgtId);
+            return String(brandPropId) === String(state.activeBrandFilterId);
+          }
+          return false;
+        });
+        if (!manufactures) return false;
+      }
+      
+      if (label === 'Category') {
+        const hasValidProduct = state.allLinks.some(link => {
+          const srcId = getLinkId(link.source);
+          const tgtId = getLinkId(link.target);
+          if (link.type === 'BELONGS_TO' && tgtId === node.id) {
+            // Check if this product is manufactured by the active brand
+            return state.allLinks.some(bLink => {
+              const bSrcId = getLinkId(bLink.source);
+              const bTgtId = getLinkId(bLink.target);
+              if (bSrcId === srcId && bLink.type === 'MANUFACTURED_BY') {
+                const brandPropId = getNodePropertyId(bTgtId);
+                return String(brandPropId) === String(state.activeBrandFilterId);
+              }
+              return false;
+            });
+          }
+          return false;
+        });
+        if (!hasValidProduct) return false;
+      }
+
+      if (label === 'Brand') {
+        const nodePropId = node.properties.id || node.id;
+        if (String(nodePropId) !== String(state.activeBrandFilterId)) return false;
+      }
     }
 
     return true;
@@ -408,6 +482,9 @@ function renderGraph() {
 
     node.attr('transform', d => `translate(${d.x},${d.y})`);
   });
+
+  // Highlight active recommendation pair nodes immediately
+  updateRecommendationHighlights();
 }
 
 // 5. Dynamic Node Interactive Focus Details
@@ -513,6 +590,8 @@ function selectNode(node) {
   // Reset custom sub-sections visibility
   document.getElementById('brand-competitors-section').classList.add('hide');
   document.getElementById('category-relations-section').classList.add('hide');
+  document.getElementById('brand-categories-section').classList.add('hide');
+  document.getElementById('category-brands-section').classList.add('hide');
 
   if (label === 'Product') {
     priceSec.classList.remove('hide');
@@ -531,10 +610,15 @@ function selectNode(node) {
     compileGeneralProperties(node);
     compileEcosystemConnections(node);
 
+    const catalogHeader = document.getElementById('catalog-products-header');
     if (label === 'Brand') {
+      if (catalogHeader) catalogHeader.style.color = 'var(--accent)';
       fetchBrandCompetitorsIntelligence(node);
+      fetchBrandCategoriesFootprint(node);
     } else if (label === 'Category') {
+      if (catalogHeader) catalogHeader.style.color = 'hsl(290, 85%, 60%)';
       fetchCategoryRelationsIntelligence(node);
+      fetchCategoryBrandsFootprint(node);
     }
   }
 }
@@ -671,8 +755,13 @@ async function selectNodeFromId(nodeId) {
     showToast('Expanding graph visual network...', 'warning');
     
     try {
-      const isInternalId = !isNaN(Number(nodeId));
-      const cypher = `MATCH (n) WHERE n.id = "${nodeId}" OR id(n) = ${isInternalId ? Number(nodeId) : -1} OPTIONAL MATCH (n)-[r]-(m) RETURN n, r, m LIMIT 50`;
+      let cypher = '';
+      if (typeof nodeId === 'number') {
+        cypher = `MATCH (n) WHERE id(n) = ${nodeId} OPTIONAL MATCH (n)-[r]-(m) RETURN n, r, m LIMIT 50`;
+      } else {
+        // String ID: Search strictly by custom property ID to prevent numeric string clashes with internal Neo4j IDs!
+        cypher = `MATCH (n) WHERE n.id = "${nodeId}" OPTIONAL MATCH (n)-[r]-(m) RETURN n, r, m LIMIT 50`;
+      }
       
       const res = await fetch('/api/query', {
         method: 'POST',
@@ -800,12 +889,11 @@ async function compileEcosystemConnections(node) {
   // 2. Fallback: Dynamically fetch connected products from the Neo4j database in real-time!
   try {
     const customId = node.properties?.id || node.id;
-    const isInternalId = !isNaN(Number(customId));
     let cypher = '';
     if (label === 'Brand') {
-      cypher = `MATCH (p:Product)-[r:MANUFACTURED_BY]->(b:Brand) WHERE b.id = "${customId}" OR id(b) = ${isInternalId ? Number(customId) : -1} RETURN p, r, b LIMIT 15`;
+      cypher = `MATCH (p:Product)-[r:MANUFACTURED_BY]->(b:Brand) WHERE b.id = "${customId}" RETURN p, r, b LIMIT 15`;
     } else {
-      cypher = `MATCH (p:Product)-[r:BELONGS_TO]->(c:Category) WHERE c.id = "${customId}" OR id(c) = ${isInternalId ? Number(customId) : -1} RETURN p, r, c LIMIT 15`;
+      cypher = `MATCH (p:Product)-[r:BELONGS_TO]->(c:Category) WHERE c.id = "${customId}" RETURN p, r, c LIMIT 15`;
     }
 
     const res = await fetch('/api/query', {
@@ -842,12 +930,30 @@ async function compileEcosystemConnections(node) {
   }
 };
 
+// Helper to recursively find all child category IDs (descendants) under a given parent category ID
+function getCategoryDescendants(categoryId) {
+  const descendants = new Set([String(categoryId)]);
+  if (!state.categories || state.categories.length === 0) return descendants;
+  
+  const queue = [String(categoryId)];
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    state.categories.forEach(c => {
+      if (c.parentId && String(c.parentId) === currentId && !descendants.has(String(c.id))) {
+        descendants.add(String(c.id));
+        queue.push(String(c.id));
+      }
+    });
+  }
+  return descendants;
+}
+
 // 7. Expandable Category Hierarchical Tree
 async function fetchCategoryHierarchy() {
   try {
     const res = await fetch('/api/categories');
     const categories = await res.json();
-    
+    state.categories = categories; // Cache flat list for parent-descendant product filters
     renderCategoryTree(categories);
   } catch (err) {
     console.error('Failed to load categories hierarchy', err);
@@ -856,6 +962,8 @@ async function fetchCategoryHierarchy() {
 
 function renderCategoryTree(categories) {
   const container = document.getElementById('category-tree-container');
+  if (!container) return;
+  const savedScrollTop = container.scrollTop;
   container.innerHTML = '';
 
   if (categories.length === 0) {
@@ -885,7 +993,7 @@ function renderCategoryTree(categories) {
 
     const header = document.createElement('div');
     header.className = 'tree-node-header';
-    if (state.activeCategoryFilterId === node.id) {
+    if (state.activeCategoryFilterId && String(state.activeCategoryFilterId) === String(node.id)) {
       header.classList.add('active');
     }
     header.onclick = (e) => {
@@ -897,6 +1005,12 @@ function renderCategoryTree(categories) {
     toggleIcon.className = 'tree-toggle-icon';
     if (node.children.length > 0) {
       toggleIcon.innerHTML = `<i class="fa-solid fa-caret-right"></i>`;
+      
+      // Restore expanded state if tracked in state.expandedCategories
+      if (state.expandedCategories.has(node.id)) {
+        toggleIcon.classList.add('expanded');
+      }
+      
       toggleIcon.onclick = (e) => {
         e.stopPropagation();
         const childContainer = div.querySelector('.tree-node-children');
@@ -904,6 +1018,12 @@ function renderCategoryTree(categories) {
         
         childContainer.classList.toggle('expanded');
         icon.classList.toggle('expanded');
+        
+        if (childContainer.classList.contains('expanded')) {
+          state.expandedCategories.add(node.id);
+        } else {
+          state.expandedCategories.delete(node.id);
+        }
       };
     }
 
@@ -915,6 +1035,7 @@ function renderCategoryTree(categories) {
     header.appendChild(folderIcon);
 
     const nameSpan = document.createElement('span');
+    nameSpan.className = 'tree-node-name';
     nameSpan.textContent = node.name;
     header.appendChild(nameSpan);
 
@@ -923,6 +1044,12 @@ function renderCategoryTree(categories) {
     if (node.children.length > 0) {
       const childrenDiv = document.createElement('div');
       childrenDiv.className = 'tree-node-children';
+      
+      // Restore expanded class to children div if category was previously expanded
+      if (state.expandedCategories.has(node.id)) {
+        childrenDiv.classList.add('expanded');
+      }
+      
       node.children.forEach(child => {
         childrenDiv.appendChild(buildHtml(child));
       });
@@ -935,82 +1062,228 @@ function renderCategoryTree(categories) {
   roots.forEach(root => {
     container.appendChild(buildHtml(root));
   });
+
+  // Restore scroll position and smoothly scroll the active category node into view
+  container.scrollTop = savedScrollTop;
+  setTimeout(() => {
+    const activeHeader = container.querySelector('.tree-node-header.active');
+    if (activeHeader) {
+      activeHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, 50);
 }
 
-function toggleCategoryFilter(categoryId, categoryName) {
+async function toggleCategoryFilter(categoryId, categoryName) {
   const activeBadge = document.getElementById('active-filter-indicator');
   const activeName = document.getElementById('active-filter-name');
   const resetBtn = document.getElementById('reset-category-filter');
+  const loadingOverlay = document.getElementById('gemini-loading-overlay');
 
-  if (state.activeCategoryFilterId === categoryId) {
+  const catIdStr = String(categoryId);
+  const activeIdStr = state.activeCategoryFilterId ? String(state.activeCategoryFilterId) : null;
+
+  if (activeIdStr === catIdStr) {
     state.activeCategoryFilterId = null;
-    activeBadge.classList.add('hide');
-    resetBtn.classList.add('hide');
+    state.activeFilterHighlightId = null;
+    if (activeBadge) activeBadge.classList.add('hide');
+    if (resetBtn) resetBtn.classList.add('hide');
+    
+    // Restore default visual graph when clearing filter
+    if (loadingOverlay) loadingOverlay.classList.remove('hide');
+    await fetchGraphData();
+    if (loadingOverlay) loadingOverlay.classList.add('hide');
   } else {
+    // Clear brand filter when activating category filter to avoid conflicting filters
+    state.activeBrandFilterId = null;
+    state.activeFilterHighlightId = null;
+    const brandReset = document.getElementById('reset-brand-filter');
+    if (brandReset) brandReset.classList.add('hide');
+    document.querySelectorAll('.brand-list-item').forEach(el => el.classList.remove('active'));
+
     state.activeCategoryFilterId = categoryId;
-    activeName.textContent = categoryName;
-    activeBadge.classList.remove('hide');
-    resetBtn.classList.remove('hide');
+    state.activeFilterHighlightId = categoryId;
+
+    // Programmatically ensure the selected category and all its ancestors are added to expandedCategories
+    // so they stay open when the tree is re-rendered!
+    if (state.categories && state.categories.length > 0) {
+      state.expandedCategories.add(String(categoryId));
+      let currentId = String(categoryId);
+      while (currentId) {
+        const cat = state.categories.find(c => String(c.id) === currentId);
+        if (cat) {
+          if (cat.parentId) {
+            state.expandedCategories.add(String(cat.parentId));
+            currentId = String(cat.parentId);
+          } else {
+            currentId = null;
+          }
+        } else {
+          currentId = null;
+        }
+      }
+    }
+    const activePrefix = document.getElementById('active-filter-prefix');
+    if (activePrefix) activePrefix.textContent = 'Category:';
+    if (activeName) activeName.textContent = categoryName;
+    if (activeBadge) activeBadge.classList.remove('hide');
+    if (resetBtn) resetBtn.classList.remove('hide');
+
+    // Dynamically fetch category sub-graph to ensure all descendants, products, and brands are fully loaded on canvas!
+    if (loadingOverlay) {
+      const loadingText = loadingOverlay.querySelector('h3');
+      if (loadingText) loadingText.textContent = `Loading ${categoryName} ecosystem...`;
+      loadingOverlay.classList.remove('hide');
+    }
+    showToast(`Loading ${categoryName} ecosystem...`, 'warning');
+
+    try {
+      const cypher = `
+        MATCH (c:Category)
+        WHERE c.id = "${categoryId}"
+        OPTIONAL MATCH (sub:Category)-[:PARENT_CATEGORY*..4]->(c)
+        WITH c, collect(sub) as subs
+        WITH [c] + subs as cats
+        UNWIND cats as cat
+        OPTIONAL MATCH (p:Product)-[r:BELONGS_TO]->(cat)
+        WITH cat, r, p LIMIT 250
+        OPTIONAL MATCH (p)-[m:MANUFACTURED_BY]->(b:Brand)
+        RETURN cat, r, p, m, b
+      `;
+
+      const res = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: cypher })
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.nodes && data.nodes.length > 0) {
+        state.allNodes = data.nodes;
+        state.allLinks = data.links;
+        showToast(`Loaded ${data.nodes.length} nodes for category focus!`, 'success');
+        
+        // Programmatically select this Category node to load it into the right Object Inspector!
+        const categoryNode = data.nodes.find(n => String(n.id) === String(categoryId) || (n.properties && String(n.properties.id) === String(categoryId)));
+        if (categoryNode) {
+          selectNode(categoryNode);
+          switchRightSidebarTab('inspector-tab');
+
+          // Smoothly zoom and center the camera on this category node!
+          setTimeout(() => {
+            const parent = svg.node().parentElement;
+            const w = parent.clientWidth;
+            const h = parent.clientHeight;
+            
+            const nodeOnCanvas = state.allNodes.find(n => String(n.id) === String(categoryId) || (n.properties && String(n.properties.id) === String(categoryId)));
+            if (nodeOnCanvas && nodeOnCanvas.x !== undefined && nodeOnCanvas.y !== undefined) {
+              const transform = d3.zoomIdentity
+                .translate(w / 2 - nodeOnCanvas.x, h / 2 - nodeOnCanvas.y)
+                .scale(1.2);
+                
+              svg.transition().duration(500).call(zoomBehavior.transform, transform);
+            }
+          }, 350);
+        }
+      } else {
+        showToast('Category contains no products or sub-categories.', 'info');
+      }
+    } catch (err) {
+      console.error('Failed to load category sub-graph:', err);
+      showToast('Ecosystem query failed.', 'error');
+    } finally {
+      if (loadingOverlay) loadingOverlay.classList.add('hide');
+    }
   }
 
-  document.querySelectorAll('.tree-node-header').forEach(el => el.classList.remove('active'));
+  // Snap-render the tree visually without waiting for server request
+  if (state.categories && state.categories.length > 0) {
+    renderCategoryTree(state.categories);
+  } else {
+    fetchCategoryHierarchy();
+  }
   
   applyGraphFilters();
-  fetchCategoryHierarchy();
 }
 
 // 8. Dynamic UI Event Bindings
 function bindUIEvents() {
-  // Sidebar Tab Switching Logic
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.onclick = async () => {
-      // Deactivate all tab buttons and content sections
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      
-      // Activate clicked button
-      btn.classList.add('active');
-      
-      // Activate matching content section
-      const tabId = btn.getAttribute('data-tab');
-      const targetContent = document.getElementById(tabId);
-      if (targetContent) {
-        targetContent.classList.add('active');
-      }
+  // Left Sidebar Tab Switching Logic
+  const leftSidebar = document.querySelector('.left-sidebar');
+  if (leftSidebar) {
+    leftSidebar.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.onclick = async () => {
+        leftSidebar.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        leftSidebar.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        
+        const tabId = btn.getAttribute('data-tab');
+        const targetContent = document.getElementById(tabId);
+        if (targetContent) {
+          targetContent.classList.add('active');
+        }
 
-      if (tabId === 'recommendations-tab') {
-        loadRecommendations();
-      }
+        if (tabId === 'recommendations-tab') {
+          loadRecommendations();
+        }
 
-      // 🌟 REFRESH SCREEN: Reset all filters upon tab switching for a fresh interactive canvas context!
-      state.activeCategoryFilterId = null;
-      state.activeBrandFilterId = null;
-      state.activeSearchQuery = '';
+        // Reset recommendation pair highlights
+        state.activeRecPair = null;
+        state.activeFilterHighlightId = null;
+        updateRecommendationHighlights();
 
-      // Reset indicators and controls in the UI
-      const catReset = document.getElementById('reset-category-filter');
-      if (catReset) catReset.classList.add('hide');
-      const brandReset = document.getElementById('reset-brand-filter');
-      if (brandReset) brandReset.classList.add('hide');
-      const activeBadge = document.getElementById('active-filter-indicator');
-      if (activeBadge) activeBadge.classList.add('hide');
-      const clearBtn = document.getElementById('search-clear-btn');
-      if (clearBtn) clearBtn.style.display = 'none';
-      const searchInput = document.getElementById('search-input');
-      if (searchInput) searchInput.value = '';
-      const cypherPreview = document.getElementById('cypher-preview-badge');
-      if (cypherPreview) cypherPreview.classList.add('hide');
+        // 🌟 REFRESH SCREEN: Reset all filters upon tab switching for a fresh interactive canvas context!
+        state.activeCategoryFilterId = null;
+        state.activeBrandFilterId = null;
+        state.activeSearchQuery = '';
+        state.isServerSearched = false;
 
-      // Clear visual list highlights
-      document.querySelectorAll('.brand-list-item').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tree-node-header').forEach(el => el.classList.remove('active'));
+        // Reset indicators and controls in the UI
+        const catReset = document.getElementById('reset-category-filter');
+        if (catReset) catReset.classList.add('hide');
+        const brandReset = document.getElementById('reset-brand-filter');
+        if (brandReset) brandReset.classList.add('hide');
+        const activeBadge = document.getElementById('active-filter-indicator');
+        if (activeBadge) activeBadge.classList.add('hide');
+        const clearBtn = document.getElementById('search-clear-btn');
+        if (clearBtn) clearBtn.style.display = 'none';
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) searchInput.value = '';
+        const brandSearchInput = document.getElementById('brand-search-input');
+        if (brandSearchInput) brandSearchInput.value = '';
+        const categorySearchInput = document.getElementById('category-search-input');
+        if (categorySearchInput) categorySearchInput.value = '';
+        const cypherPreview = document.getElementById('cypher-preview-badge');
+        if (cypherPreview) cypherPreview.classList.add('hide');
 
-      // Re-fetch category and brand counts and redraw the default clean graph JIT!
-      fetchCategoryHierarchy();
-      fetchBrandsList();
-      await fetchGraphData();
-    };
-  });
+        // Clear visual list highlights
+        document.querySelectorAll('.brand-list-item').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tree-node-header').forEach(el => el.classList.remove('active'));
+
+        // Re-fetch category and brand counts and redraw the default clean graph JIT!
+        fetchCategoryHierarchy();
+        fetchBrandsList();
+        await fetchGraphData();
+      };
+    });
+  }
+
+  // Right Sidebar Tab Switching Logic
+  const rightSidebar = document.querySelector('.right-sidebar');
+  if (rightSidebar) {
+    rightSidebar.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.onclick = () => {
+        rightSidebar.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        rightSidebar.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        
+        const tabId = btn.getAttribute('data-tab');
+        const targetContent = document.getElementById(tabId);
+        if (targetContent) {
+          targetContent.classList.add('active');
+        }
+      };
+    });
+  }
 
   // Database ETL Sync
   document.getElementById('sync-db-btn').onclick = async () => {
@@ -1114,6 +1387,7 @@ function bindUIEvents() {
   searchInput.addEventListener('input', (e) => {
     if (state.searchMode === 'keyword') {
       state.activeSearchQuery = e.target.value;
+      state.isServerSearched = false;
       applyGraphFilters();
 
       const q = e.target.value.trim();
@@ -1245,6 +1519,7 @@ function bindUIEvents() {
         // Load the new sub-graph into visual memory
         state.allNodes = data.nodes;
         state.allLinks = data.links;
+        state.isServerSearched = true;
         applyGraphFilters();
 
         // Reveal the floating Cypher preview badge and reasoning explanation
@@ -1289,7 +1564,38 @@ function bindUIEvents() {
         state.allNodes = data.nodes;
         state.allLinks = data.links;
         state.activeSearchQuery = keywordText;
+        state.isServerSearched = true;
         applyGraphFilters();
+
+        // Locate the target node that matches the search query exactly (or partially)
+        const matchingNode = data.nodes.find(n => {
+          const name = (n.properties?.name || '').toLowerCase();
+          return name === keywordText.toLowerCase();
+        }) || data.nodes.find(n => {
+          const name = (n.properties?.name || '').toLowerCase();
+          return name.includes(keywordText.toLowerCase());
+        });
+        
+        if (matchingNode) {
+          selectNode(matchingNode);
+          switchRightSidebarTab('inspector-tab');
+          
+          // Smoothly zoom and center the camera on this node!
+          setTimeout(() => {
+            const parent = svg.node().parentElement;
+            const w = parent.clientWidth;
+            const h = parent.clientHeight;
+            
+            const nodeOnCanvas = state.allNodes.find(n => n.id === matchingNode.id);
+            if (nodeOnCanvas && nodeOnCanvas.x !== undefined && nodeOnCanvas.y !== undefined) {
+              const transform = d3.zoomIdentity
+                .translate(w / 2 - nodeOnCanvas.x, h / 2 - nodeOnCanvas.y)
+                .scale(1.2);
+                
+              svg.transition().duration(500).call(zoomBehavior.transform, transform);
+            }
+          }, 350);
+        }
       } else {
         showToast(`Search failed: ${data.error}`, 'error');
       }
@@ -1357,7 +1663,7 @@ function bindUIEvents() {
     });
   });
 
-  const relTypes = ['COMPETES_WITH', 'SUBSTITUTE_FOR', 'COMPLEMENTARY_TO'];
+  const relTypes = ['COMPETES_WITH', 'SUBSTITUTE_FOR', 'COMPLEMENTARY_TO', 'MANUFACTURED_BY', 'BELONGS_TO', 'OPERATES_IN'];
   relTypes.forEach(type => {
     const chk = document.getElementById(`rel-${getRelCheckSuffix(type)}-checkbox`);
     chk.addEventListener('change', (e) => {
@@ -1373,6 +1679,73 @@ function bindUIEvents() {
   };
   document.getElementById('reset-category-filter').onclick = () => toggleCategoryFilter(state.activeCategoryFilterId, '');
   document.getElementById('reset-brand-filter').onclick = () => toggleBrandFilter(state.activeBrandFilterId, '');
+
+  // Brand list search filtering
+  const brandSearchInput = document.getElementById('brand-search-input');
+  if (brandSearchInput) {
+    brandSearchInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (!state.brands) return;
+      const filtered = state.brands.filter(b => b.name.toLowerCase().includes(q));
+      renderBrandsList(filtered);
+    });
+  }
+
+  // Category list search filtering
+  const categorySearchInput = document.getElementById('category-search-input');
+  if (categorySearchInput) {
+    categorySearchInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const nodes = document.querySelectorAll('#category-tree-container .tree-node');
+      
+      if (!q) {
+        renderCategoryTree(state.categories);
+        return;
+      }
+
+      nodes.forEach(node => {
+        node.style.display = 'none';
+        const header = node.querySelector('.tree-node-header');
+        if (header) header.style.opacity = '0.5';
+      });
+
+      nodes.forEach(node => {
+        const header = node.querySelector('.tree-node-header');
+        if (header) {
+          const nameSpan = header.querySelector('.tree-node-name');
+          const nameText = nameSpan ? nameSpan.textContent.toLowerCase() : '';
+          
+          if (nameText.includes(q)) {
+            header.style.opacity = '1';
+            node.style.display = '';
+            node.querySelectorAll('.tree-node').forEach(child => {
+              child.style.display = '';
+              const childHeader = child.querySelector('.tree-node-header');
+              if (childHeader) childHeader.style.opacity = '1';
+            });
+
+            let parent = node.parentElement;
+            while (parent && parent.id !== 'category-tree-container') {
+              if (parent.classList.contains('tree-node-children')) {
+                parent.classList.add('expanded');
+                const parentNode = parent.closest('.tree-node');
+                if (parentNode) {
+                  parentNode.style.display = '';
+                  const parentHeader = parentNode.querySelector('.tree-node-header');
+                  if (parentHeader) {
+                    parentHeader.style.opacity = '1';
+                    const icon = parentHeader.querySelector('.tree-toggle-icon');
+                    if (icon) icon.classList.add('expanded');
+                  }
+                }
+              }
+              parent = parent.parentElement;
+            }
+          }
+        }
+      });
+    });
+  }
 
   // Toolbar Actions
   document.getElementById('zoom-in-btn').onclick = () => svg.transition().duration(250).call(zoomBehavior.scaleBy, 1.25);
@@ -1552,6 +1925,9 @@ function getRelCheckSuffix(type) {
   if (type === 'COMPETES_WITH') return 'comp';
   if (type === 'SUBSTITUTE_FOR') return 'sub';
   if (type === 'COMPLEMENTARY_TO') return 'comp-to';
+  if (type === 'MANUFACTURED_BY') return 'brand';
+  if (type === 'BELONGS_TO') return 'cat';
+  if (type === 'OPERATES_IN') return 'operates';
   return 'sourced';
 }
 
@@ -1967,7 +2343,7 @@ async function fetchBrandsList() {
   try {
     const res = await fetch('/api/brands');
     const brands = await res.json();
-    
+    state.brands = brands; // Cache brands list globally
     renderBrandsList(brands);
   } catch (err) {
     console.error('Failed to load brands list', err);
@@ -1977,6 +2353,7 @@ async function fetchBrandsList() {
 function renderBrandsList(brands) {
   const container = document.getElementById('brands-list-container');
   if (!container) return;
+  const savedScrollTop = container.scrollTop;
   container.innerHTML = '';
 
   if (brands.length === 0) {
@@ -1987,7 +2364,7 @@ function renderBrandsList(brands) {
   brands.forEach(b => {
     const div = document.createElement('div');
     div.className = 'brand-list-item';
-    if (state.activeBrandFilterId === b.id) {
+    if (state.activeBrandFilterId && String(state.activeBrandFilterId) === String(b.id)) {
       div.classList.add('active');
     }
     
@@ -2003,27 +2380,111 @@ function renderBrandsList(brands) {
 
     container.appendChild(div);
   });
+
+  // Restore scroll position and smoothly scroll the active brand item into view
+  container.scrollTop = savedScrollTop;
+  setTimeout(() => {
+    const activeItem = container.querySelector('.brand-list-item.active');
+    if (activeItem) {
+      activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, 50);
 }
 
-function toggleBrandFilter(brandId, brandName) {
+async function toggleBrandFilter(brandId, brandName) {
   const activeBadge = document.getElementById('active-filter-indicator');
   const activeName = document.getElementById('active-filter-name');
   const resetBtn = document.getElementById('reset-brand-filter');
+  const loadingOverlay = document.getElementById('gemini-loading-overlay');
 
-  if (state.activeBrandFilterId === brandId) {
+  const brandIdStr = String(brandId);
+  const activeBrandIdStr = state.activeBrandFilterId ? String(state.activeBrandFilterId) : null;
+
+  if (activeBrandIdStr === brandIdStr) {
     state.activeBrandFilterId = null;
-    activeBadge.classList.add('hide');
-    resetBtn.classList.add('hide');
+    state.activeFilterHighlightId = null;
+    if (activeBadge) activeBadge.classList.add('hide');
+    if (resetBtn) resetBtn.classList.add('hide');
+    
+    // Restore default visual graph when clearing filter
+    if (loadingOverlay) loadingOverlay.classList.remove('hide');
+    await fetchGraphData();
+    if (loadingOverlay) loadingOverlay.classList.add('hide');
   } else {
     // Clear category filter when activating brand filter to avoid conflicting filters
     state.activeCategoryFilterId = null;
+    state.activeFilterHighlightId = null;
     const catReset = document.getElementById('reset-category-filter');
     if (catReset) catReset.classList.add('hide');
     
     state.activeBrandFilterId = brandId;
-    activeName.textContent = `Brand: ${brandName}`;
-    activeBadge.classList.remove('hide');
-    resetBtn.classList.remove('hide');
+    state.activeFilterHighlightId = brandId;
+    const activePrefix = document.getElementById('active-filter-prefix');
+    if (activePrefix) activePrefix.textContent = 'Brand:';
+    if (activeName) activeName.textContent = brandName;
+    if (activeBadge) activeBadge.classList.remove('hide');
+    if (resetBtn) resetBtn.classList.remove('hide');
+
+    // Dynamically fetch brand sub-graph to ensure all products and category links are fully loaded on canvas!
+    if (loadingOverlay) {
+      const loadingText = loadingOverlay.querySelector('h3');
+      if (loadingText) loadingText.textContent = `Loading ${brandName} catalog...`;
+      loadingOverlay.classList.remove('hide');
+    }
+    showToast(`Loading ${brandName} catalog...`, 'warning');
+
+    try {
+      const cypher = `
+        MATCH (b:Brand)
+        WHERE b.id = "${brandId}"
+        OPTIONAL MATCH (p:Product)-[r:MANUFACTURED_BY]->(b)
+        OPTIONAL MATCH (p)-[cLink:BELONGS_TO]->(c:Category)
+        RETURN b, r, p, cLink, c LIMIT 300
+      `;
+
+      const res = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: cypher })
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.nodes && data.nodes.length > 0) {
+        state.allNodes = data.nodes;
+        state.allLinks = data.links;
+        showToast(`Loaded ${data.nodes.length} nodes for brand focus!`, 'success');
+        
+        // Programmatically select this Brand node to load it into the right Object Inspector!
+        const brandNode = data.nodes.find(n => String(n.id) === String(brandId) || (n.properties && String(n.properties.id) === String(brandId)));
+        if (brandNode) {
+          selectNode(brandNode);
+          switchRightSidebarTab('inspector-tab');
+
+          // Smoothly zoom and center the camera on this brand node!
+          setTimeout(() => {
+            const parent = svg.node().parentElement;
+            const w = parent.clientWidth;
+            const h = parent.clientHeight;
+            
+            const nodeOnCanvas = state.allNodes.find(n => String(n.id) === String(brandId) || (n.properties && String(n.properties.id) === String(brandId)));
+            if (nodeOnCanvas && nodeOnCanvas.x !== undefined && nodeOnCanvas.y !== undefined) {
+              const transform = d3.zoomIdentity
+                .translate(w / 2 - nodeOnCanvas.x, h / 2 - nodeOnCanvas.y)
+                .scale(1.2);
+                
+              svg.transition().duration(500).call(zoomBehavior.transform, transform);
+            }
+          }, 350);
+        }
+      } else {
+        showToast('Brand contains no products.', 'info');
+      }
+    } catch (err) {
+      console.error('Failed to load brand sub-graph:', err);
+      showToast('Brand query failed.', 'error');
+    } finally {
+      if (loadingOverlay) loadingOverlay.classList.add('hide');
+    }
   }
 
   document.querySelectorAll('.brand-list-item').forEach(el => el.classList.remove('active'));
@@ -2120,6 +2581,129 @@ async function fetchCategoryRelationsIntelligence(categoryNode) {
     compList.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
   }
 }
+
+// Fetch Category footprints of a Brand via OPERATES_IN
+async function fetchBrandCategoriesFootprint(brandNode) {
+  const list = document.getElementById('brand-categories-list');
+  const container = document.getElementById('brand-categories-section');
+  list.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Loading market footprint...</li>`;
+  container.classList.remove('hide');
+
+  try {
+    const brandId = brandNode.properties?.id || brandNode.id;
+    const cypher = `
+      MATCH (b:Brand)-[r:OPERATES_IN]->(c:Category)
+      WHERE b.id = "${brandId}"
+      RETURN b, r, c
+      LIMIT 12
+    `;
+
+    const res = await fetch('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: cypher })
+    });
+    const data = await res.json();
+    list.innerHTML = '';
+
+    const categories = data.nodes?.filter(n => n.labels?.includes('Category')) || [];
+    
+    if (categories.length > 0) {
+      // Sort categories by their operates edge productCount descending
+      const catWithCounts = categories.map(cat => {
+        const link = data.links.find(l => {
+          const tgtId = (l.target && typeof l.target === 'object') ? l.target.id : l.target;
+          return tgtId === cat.id;
+        });
+        const productCount = link && link.properties && link.properties.productCount ? parseInt(link.properties.productCount) : 0;
+        return { cat, productCount };
+      });
+
+      catWithCounts.sort((a, b) => b.productCount - a.productCount);
+
+      catWithCounts.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        li.onclick = () => selectNodeFromId(item.cat.id);
+        
+        const countBadge = `<span class="match-badge" style="background: rgba(251, 146, 60, 0.12); color: rgb(251, 146, 60); border: 1px solid rgba(251, 146, 60, 0.25); float: right;"><i class="fa-solid fa-box" style="font-size: 8px; margin-right: 2px;"></i> ${item.productCount.toLocaleString()} GPs</span>`;
+        
+        li.innerHTML = `
+          <span class="rel-item-name">${item.cat.properties.name}${countBadge}</span>
+          <span class="rel-item-meta">Category <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        list.appendChild(li);
+      });
+    } else {
+      list.innerHTML = `<li class="text-muted text-center py-2">No category footprint mapped.</li>`;
+    }
+  } catch (err) {
+    console.error('Failed to fetch brand categories footprint:', err);
+    list.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
+  }
+}
+
+// Fetch Brands active in a Category via OPERATES_IN
+async function fetchCategoryBrandsFootprint(categoryNode) {
+  const list = document.getElementById('category-brands-list');
+  const container = document.getElementById('category-brands-section');
+  list.innerHTML = `<li class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Loading active brands...</li>`;
+  container.classList.remove('hide');
+
+  try {
+    const categoryId = categoryNode.properties?.id || categoryNode.id;
+    const cypher = `
+      MATCH (b:Brand)-[r:OPERATES_IN]->(c:Category)
+      WHERE c.id = "${categoryId}"
+      RETURN b, r, c
+      LIMIT 12
+    `;
+
+    const res = await fetch('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: cypher })
+    });
+    const data = await res.json();
+    list.innerHTML = '';
+
+    const brands = data.nodes?.filter(n => n.labels?.includes('Brand')) || [];
+    
+    if (brands.length > 0) {
+      // Sort brands by their operates edge productCount descending
+      const brandWithCounts = brands.map(brand => {
+        const link = data.links.find(l => {
+          const srcId = (l.source && typeof l.source === 'object') ? l.source.id : l.source;
+          return srcId === brand.id;
+        });
+        const productCount = link && link.properties && link.properties.productCount ? parseInt(link.properties.productCount) : 0;
+        return { brand, productCount };
+      });
+
+      brandWithCounts.sort((a, b) => b.productCount - a.productCount);
+
+      brandWithCounts.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'hover-item';
+        li.onclick = () => selectNodeFromId(item.brand.id);
+        
+        const countBadge = `<span class="match-badge" style="background: rgba(251, 146, 60, 0.12); color: rgb(251, 146, 60); border: 1px solid rgba(251, 146, 60, 0.25); float: right;"><i class="fa-solid fa-box" style="font-size: 8px; margin-right: 2px;"></i> ${item.productCount.toLocaleString()} GPs</span>`;
+        
+        li.innerHTML = `
+          <span class="rel-item-name">${item.brand.properties.name}${countBadge}</span>
+          <span class="rel-item-meta">Brand <i class="fa-solid fa-chevron-right"></i></span>
+        `;
+        list.appendChild(li);
+      });
+    } else {
+      list.innerHTML = `<li class="text-muted text-center py-2">No active brands mapped.</li>`;
+    }
+  } catch (err) {
+    console.error('Failed to fetch category brands footprint:', err);
+    list.innerHTML = `<li class="text-muted text-center py-2 text-danger">Query error.</li>`;
+  }
+}
+
 
 // Expose state and selectNodeFromId globally on window for E2E validation
 window.state = state;
@@ -2438,7 +3022,7 @@ function initRecommendationsController() {
       
       const subtitle = document.getElementById('rec-widget-subtitle');
       if (subtitle) {
-        subtitle.textContent = 'Discover missing category relationships (complements and substitutes) purely from graph Jaccard overlaps. Review and approve pairings to merge them in Neo4j.';
+        subtitle.textContent = 'Discover missing category relationships (complements and substitutes) using hybrid graph Jaccard overlaps refined by cognitive LLM-as-a-judge evaluations. Review and approve pairings to merge them in Neo4j.';
       }
       
       loadRecommendations();
@@ -2452,7 +3036,7 @@ function initRecommendationsController() {
       
       const subtitle = document.getElementById('rec-widget-subtitle');
       if (subtitle) {
-        subtitle.textContent = 'Discover potential market rival brands based on category overlap co-occurrences in catalog listings. Review and approve pairings to merge them in Neo4j.';
+        subtitle.textContent = 'Discover potential market rival brands based on category overlap co-occurrences refined by cognitive LLM competitor evaluations. Review and approve pairings to merge them in Neo4j.';
       }
       
       loadRecommendations();
@@ -2578,9 +3162,13 @@ async function loadRecommendations() {
         
         if (isBrands) {
           const pctSimilarity = Math.round(item.similarity * 100);
+          const pctConfidence = Math.round((item.confidence || 0.80) * 100);
           topRowHtml = `
             <div class="card-top-row">
-              <span class="card-badge badge-competitor">COMPETITOR</span>
+              <div class="card-badges-group">
+                <span class="card-badge badge-competitor">COMPETITOR</span>
+                <span class="card-badge badge-confidence">${pctConfidence}% confidence</span>
+              </div>
               <span class="card-similarity">${pctSimilarity}% overlap</span>
             </div>
           `;
@@ -2594,9 +3182,13 @@ async function loadRecommendations() {
         } else {
           const badgeClass = item.relationshipType === 'SUBSTITUTE' ? 'badge-substitute' : 'badge-complement';
           const pctSimilarity = Math.round(item.similarity * 100);
+          const pctConfidence = Math.round((item.confidence || 0.80) * 100);
           topRowHtml = `
             <div class="card-top-row">
-              <span class="card-badge ${badgeClass}">${item.relationshipType}</span>
+              <div class="card-badges-group">
+                <span class="card-badge ${badgeClass}">${item.relationshipType}</span>
+                <span class="card-badge badge-confidence">${pctConfidence}% confidence</span>
+              </div>
               <span class="card-similarity">${pctSimilarity}% overlap</span>
             </div>
           `;
@@ -2619,9 +3211,47 @@ async function loadRecommendations() {
           if (state.selectedRecommendations.has(key)) {
             state.selectedRecommendations.delete(key);
             card.classList.remove('selected');
+            
+            // Clear recommendation pair highlights
+            state.activeRecPair = null;
+            updateRecommendationHighlights();
           } else {
             state.selectedRecommendations.add(key);
             card.classList.add('selected');
+
+            const primaryId = isBrands ? item.brand1Id : item.sourceId;
+            const secondaryId = isBrands ? item.brand2Id : item.targetId;
+
+            // Highlight the recommended pairing nodes on the graph!
+            state.activeRecPair = { id1: primaryId, id2: secondaryId };
+
+            // Check if BOTH nodes are already on the active graph canvas
+            const node1 = state.allNodes.find(n => n.id === primaryId || (n.properties && n.properties.id === primaryId));
+            const node2 = state.allNodes.find(n => n.id === secondaryId || (n.properties && n.properties.id === secondaryId));
+
+            if (node1 && node2) {
+              // Smoothly glide camera to center between BOTH nodes!
+              const parent = svg.node().parentElement;
+              const avgX = (node1.x + node2.x) / 2;
+              const avgY = (node1.y + node2.y) / 2;
+              const w = parent.clientWidth;
+              const h = parent.clientHeight;
+              
+              const transform = d3.zoomIdentity
+                .translate(w / 2 - avgX, h / 2 - avgY)
+                .scale(1.1);
+                
+              svg.transition().duration(500).call(zoomBehavior.transform, transform);
+              
+              selectNode(node1);
+              updateRecommendationHighlights();
+            } else {
+              // Expand visual network to pull in BOTH recommended nodes and their neighborhoods!
+              expandGraphForRecommendation(primaryId, secondaryId);
+            }
+            
+            // Programmatically activate the Object Inspector tab in the right sidebar!
+            switchRightSidebarTab('inspector-tab');
           }
 
           // Update action bar state
@@ -2642,5 +3272,137 @@ async function loadRecommendations() {
     }
   } catch (err) {
     listContainer.innerHTML = `<div class="empty-state-card text-danger" style="padding: 16px;">Connection timeout loading recommendations.</div>`;
+  }
+}
+
+// Programmatically switch active tab in the right sidebar
+function switchRightSidebarTab(tabId) {
+  const rightSidebar = document.querySelector('.right-sidebar');
+  if (!rightSidebar) return;
+  
+  rightSidebar.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  rightSidebar.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  
+  const targetBtn = rightSidebar.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+  if (targetBtn) targetBtn.classList.add('active');
+  const targetContent = document.getElementById(tabId);
+  if (targetContent) targetContent.classList.add('active');
+}
+
+// Highlight recommendation pair nodes with glowing fuchsia rings
+function updateRecommendationHighlights() {
+  // Clear any existing highlighted rec nodes
+  d3.selectAll('.node-circle').classed('highlighted-rec', false);
+  
+  const highlightedIds = new Set();
+  
+  if (state.activeRecPair) {
+    highlightedIds.add(String(state.activeRecPair.id1));
+    highlightedIds.add(String(state.activeRecPair.id2));
+  }
+  
+  if (state.activeFilterHighlightId) {
+    highlightedIds.add(String(state.activeFilterHighlightId));
+  }
+  
+  if (highlightedIds.size > 0) {
+    const highlightedNodeGroups = d3.selectAll('.node-group')
+      .filter(d => highlightedIds.has(String(d.id)) || (d.properties && d.properties.id && highlightedIds.has(String(d.properties.id))));
+      
+    // Bring highlighted node groups to the top of the SVG rendering stack so they draw on top of all edges and labels!
+    highlightedNodeGroups.raise();
+    
+    highlightedNodeGroups.select('.node-circle')
+      .classed('highlighted-rec', true);
+  }
+}
+
+// Expand the graph visual network specifically to load both recommended nodes and their neighborhood!
+async function expandGraphForRecommendation(id1, id2) {
+  showToast('Expanding visual network for recommendation pairing...', 'warning');
+  
+  try {
+    const cond1 = typeof id1 === 'number' ? `id(n) = ${id1}` : `n.id = "${id1}"`;
+    const cond2 = typeof id2 === 'number' ? `id(n) = ${id2}` : `n.id = "${id2}"`;
+    
+    // We fetch both nodes and their respective neighborhoods in a single query!
+    const cypher = `
+      MATCH (n) WHERE ${cond1} OR ${cond2}
+      OPTIONAL MATCH (n)-[r]-(m)
+      RETURN n, r, m LIMIT 80
+    `;
+    
+    const res = await fetch('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: cypher })
+    });
+    
+    const data = await res.json();
+    if (!data.nodes || data.nodes.length === 0) {
+      showToast('Nodes not located in database.', 'error');
+      return;
+    }
+
+    // Merge new nodes into state.allNodes (avoid duplicates)
+    const existingNodeIds = new Set(state.allNodes.map(n => n.id));
+    const parent = svg.node().parentElement;
+    
+    data.nodes.forEach(n => {
+      if (!existingNodeIds.has(n.id)) {
+        n.x = parent.clientWidth / 2 + (Math.random() - 0.5) * 150;
+        n.y = parent.clientHeight / 2 + (Math.random() - 0.5) * 150;
+        state.allNodes.push(n);
+      }
+    });
+
+    // Merge new links into state.allLinks (avoid duplicates)
+    const existingLinkIds = new Set(state.allLinks.map(l => `${l.source}_${l.target}_${l.type}`));
+    data.links.forEach(l => {
+      const linkKey = `${l.source}_${l.target}_${l.type}`;
+      if (!existingLinkIds.has(linkKey)) {
+        state.allLinks.push(l);
+      }
+    });
+
+    // Trigger D3 graph updates and re-draw force layout
+    applyGraphFilters();
+    
+    // Smoothly center the camera between BOTH nodes after D3 layout updates!
+    setTimeout(() => {
+      const node1 = state.allNodes.find(n => n.id === id1 || (n.properties && n.properties.id === id1));
+      const node2 = state.allNodes.find(n => n.id === id2 || (n.properties && n.properties.id === id2));
+      
+      if (node1 && node2) {
+        const avgX = (node1.x + node2.x) / 2;
+        const avgY = (node1.y + node2.y) / 2;
+        const w = parent.clientWidth;
+        const h = parent.clientHeight;
+        
+        const transform = d3.zoomIdentity
+          .translate(w / 2 - avgX, h / 2 - avgY)
+          .scale(1.1);
+          
+        svg.transition().duration(500).call(zoomBehavior.transform, transform);
+        
+        // Highlight the primary node in the inspector
+        selectNode(node1);
+        
+        showToast('Successfully rendered recommendation pairing on canvas!', 'success');
+      } else if (node1) {
+        // Fallback: zoom to node1 if node2 couldn't be loaded
+        const w = parent.clientWidth;
+        const h = parent.clientHeight;
+        const transform = d3.zoomIdentity
+          .translate(w / 2 - node1.x, h / 2 - node1.y)
+          .scale(1.1);
+        svg.transition().duration(500).call(zoomBehavior.transform, transform);
+        selectNode(node1);
+      }
+    }, 400);
+
+  } catch (err) {
+    console.error('Failed to expand graph for recommendation pairing:', err);
+    showToast('Traversal expansion failed.', 'error');
   }
 }

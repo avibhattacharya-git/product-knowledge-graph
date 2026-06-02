@@ -4,7 +4,7 @@ export class BrandMapper {
   static toDTO(rec: any): BrandDTO {
     const productCountVal = rec.keys.includes('productCount') ? rec.get('productCount') : null;
     const dto: BrandDTO = {
-      id: rec.get('id'),
+      id: String(rec.get('id')),
       name: rec.get('name')
     };
     if (productCountVal !== null) {

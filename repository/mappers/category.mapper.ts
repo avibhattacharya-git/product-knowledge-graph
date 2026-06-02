@@ -2,10 +2,11 @@ import { CategoryDTO } from '../../models/dto/category.dto';
 
 export class CategoryMapper {
   static toDTO(rec: any): CategoryDTO {
+    const parentIdVal = rec.keys.includes('parentId') ? rec.get('parentId') : null;
     return {
-      id: rec.get('id'),
+      id: String(rec.get('id')),
       name: rec.get('name'),
-      parentId: rec.keys.includes('parentId') ? (rec.get('parentId') || undefined) : undefined
+      parentId: parentIdVal != null ? String(parentIdVal) : undefined
     };
   }
 }

@@ -166,7 +166,8 @@ describe('US Retailer Product Knowledge Graph - Core Services Unit Tests', () =>
       ingestCategoryRelationships: mock(() => Promise.resolve({ complements: 5, substitutes: 4 })),
       ingestBrandTopology: mock(() => Promise.resolve({ brands: 10, manufacturers: 2, ownedLinksCount: 8 })),
       ingestBrandRelationships: mock(() => Promise.resolve({ competitors: 12 })),
-      streamProductCatalog: mock(() => Promise.resolve({ products: 15, relationships: 30 }))
+      streamProductCatalog: mock(() => Promise.resolve({ products: 15, relationships: 30 })),
+      ingestBrandCategoryRelationships: mock(() => Promise.resolve({ relationships: 15 }))
     } as any;
 
     const orchestrator = new EtlOrchestrator(mockEtlService);
@@ -186,8 +187,8 @@ describe('US Retailer Product Knowledge Graph - Core Services Unit Tests', () =>
     expect(stats.brands).toBe(10);
     expect(stats.manufacturers).toBe(2);
     expect(stats.products).toBe(15);
-    // relationships = parentLinksCount (2) + complements*2 (10) + substitutes*2 (8) + ownedLinksCount (8) + competitors*2 (24) + products.relationships (30) = 82
-    expect(stats.relationships).toBe(82);
+    // relationships = parentLinksCount (2) + complements*2 (10) + substitutes*2 (8) + ownedLinksCount (8) + competitors*2 (24) + products.relationships (30) + brandCategoryRelationships (15) = 97
+    expect(stats.relationships).toBe(97);
 
     expect(mockEtlService.truncateDatabase).toHaveBeenCalledTimes(1);
     expect(mockEtlService.verifySchemaConstraints).toHaveBeenCalledTimes(1);
@@ -196,6 +197,7 @@ describe('US Retailer Product Knowledge Graph - Core Services Unit Tests', () =>
     expect(mockEtlService.ingestBrandTopology).toHaveBeenCalledTimes(1);
     expect(mockEtlService.ingestBrandRelationships).toHaveBeenCalledTimes(1);
     expect(mockEtlService.streamProductCatalog).toHaveBeenCalledTimes(1);
+    expect(mockEtlService.ingestBrandCategoryRelationships).toHaveBeenCalledTimes(1);
   });
 
   test('NlqService handles processNLQQuery and applies LLM-as-a-Judge enrichment and filtering', async () => {

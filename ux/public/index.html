@@ -158,6 +158,21 @@
                 <span class="rel-line-legend comp-to-legend"></span>
                 <span class="rel-text">Complementary</span>
               </label>
+              <label class="rel-filter-item">
+                <input type="checkbox" id="rel-brand-checkbox" checked>
+                <span class="rel-line-legend brand-rel-legend"></span>
+                <span class="rel-text">Brand Connection</span>
+              </label>
+              <label class="rel-filter-item">
+                <input type="checkbox" id="rel-cat-checkbox" checked>
+                <span class="rel-line-legend cat-rel-legend"></span>
+                <span class="rel-text">Category Connection</span>
+              </label>
+              <label class="rel-filter-item">
+                <input type="checkbox" id="rel-operates-checkbox" checked>
+                <span class="rel-line-legend operates-legend"></span>
+                <span class="rel-text">Operates In</span>
+              </label>
               <label class="rel-filter-item" style="display: none;">
                 <input type="checkbox" id="rel-sourced-checkbox" checked>
                 <span class="rel-line-legend sourced-legend"></span>
@@ -195,6 +210,13 @@
           <div class="sidebar-widget">
             <h3>Category Hierarchy Browser</h3>
             <p class="widget-subtitle">Click a category folder to filter the graph visualization immediately to that domain ecosystem.</p>
+            
+            <!-- Modern Category Search Filter -->
+            <div class="category-search-wrapper" style="position: relative; margin-bottom: 12px; width: 100%;">
+              <i class="fa-solid fa-magnifying-glass search-inner-icon" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); font-size: 13px;"></i>
+              <input type="text" id="category-search-input" placeholder="Filter active categories..." style="width: 100%; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-glass); border-radius: 8px; padding: 10px 12px 10px 36px; color: #fff; font-family: var(--font-body); font-size: 12px; outline: none; transition: var(--transition-smooth);" autocomplete="off">
+            </div>
+
             <div id="category-tree-container" class="category-tree">
               <!-- Dynamically populated categories tree -->
               <div class="loading-spinner"><i class="fa-solid fa-folder-open"></i> Loading hierarchy...</div>
@@ -210,6 +232,13 @@
           <div class="sidebar-widget">
             <h3>Brand Ecosystem Browser</h3>
             <p class="widget-subtitle">Select a brand to filter the visual canvas directly to its product portfolio.</p>
+            
+            <!-- Modern Brand Search Filter -->
+            <div class="brand-search-wrapper" style="position: relative; margin-bottom: 12px; width: 100%;">
+              <i class="fa-solid fa-magnifying-glass search-inner-icon" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); font-size: 13px;"></i>
+              <input type="text" id="brand-search-input" placeholder="Filter active brands..." style="width: 100%; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-glass); border-radius: 8px; padding: 10px 12px 10px 36px; color: #fff; font-family: var(--font-body); font-size: 12px; outline: none; transition: var(--transition-smooth);" autocomplete="off">
+            </div>
+
             <div id="brands-list-container" class="brands-list">
               <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading brands list...</div>
             </div>
@@ -235,7 +264,7 @@
               <button class="rec-toggle-btn" id="rec-toggle-brands-btn" style="flex: 1; background: none; border: none; color: var(--text-secondary); padding: 6px; border-radius: 6px; font-family: var(--font-display); font-size: 10px; font-weight: 600; cursor: pointer; transition: var(--transition-smooth); text-align: center;">Brand Rivals</button>
             </div>
             
-            <p class="widget-subtitle" id="rec-widget-subtitle">Discover missing category relationships (complements and substitutes) purely from graph Jaccard overlaps. Review and approve pairings to merge them in Neo4j.</p>
+            <p class="widget-subtitle" id="rec-widget-subtitle">Discover missing category relationships (complements and substitutes) using hybrid graph Jaccard overlaps refined by cognitive LLM-as-a-judge evaluations. Review and approve pairings to merge them in Neo4j.</p>
             
             <div class="recommendations-list-container" style="max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 4px; margin-top: 12px; margin-bottom: 12px;">
               <div id="recommendations-list" class="recommendations-deck" style="display: flex; flex-direction: column; gap: 10px;">
@@ -260,7 +289,7 @@
         <div class="canvas-toolbar">
           <div class="toolbar-left">
             <span class="current-filter-badge hide" id="active-filter-indicator">
-              Category Filter: <strong id="active-filter-name">None</strong>
+              <span id="active-filter-prefix">Filter:</span> <strong id="active-filter-name">None</strong>
               <i class="fa-solid fa-xmark filter-remove-icon" id="clear-active-filter-badge"></i>
             </span>
           </div>
@@ -424,6 +453,15 @@
                   </ul>
                 </div>
 
+                <div class="ecosystem-sub-section hide" id="brand-categories-section">
+                  <div class="rel-intel-header operates-color mb-2" style="background: rgba(251, 146, 60, 0.12); color: rgb(251, 146, 60);">
+                    <i class="fa-solid fa-network-wired"></i> Operational Market Footprint (OPERATES_IN)
+                  </div>
+                  <ul class="rel-intel-list mb-3" id="brand-categories-list">
+                    <!-- Injected via app.js -->
+                  </ul>
+                </div>
+
                 <div class="ecosystem-sub-section hide" id="category-relations-section">
                   <div class="rel-intel-header sub-color mb-2">
                     <i class="fa-solid fa-arrows-spin"></i> Alternative Categories (Substitutes)
@@ -440,7 +478,16 @@
                   </ul>
                 </div>
 
-                <div class="rel-intel-header primary-color mb-2" id="catalog-products-header" style="color: var(--primary-color);">
+                <div class="ecosystem-sub-section hide" id="category-brands-section">
+                  <div class="rel-intel-header operates-color mb-2" style="background: rgba(251, 146, 60, 0.12); color: rgb(251, 146, 60);">
+                    <i class="fa-solid fa-tags"></i> Active Brands in Category (OPERATES_IN)
+                  </div>
+                  <ul class="rel-intel-list mb-3" id="category-brands-list">
+                    <!-- Injected via app.js -->
+                  </ul>
+                </div>
+
+                <div class="rel-intel-header primary-color mb-2" id="catalog-products-header" style="color: var(--primary);">
                   <i class="fa-solid fa-box"></i> Associated Catalog Products
                 </div>
                 <ul class="ecosystem-connections-list" id="node-ecosystem-list">
@@ -550,6 +597,7 @@
                   <option value="SOURCED_FROM">SOURCED_FROM (Product -> CatalogSource)</option>
                   <option value="MANUFACTURED_BY">MANUFACTURED_BY (Product -> Brand)</option>
                   <option value="BELONGS_TO">BELONGS_TO (Product -> Category)</option>
+                  <option value="OPERATES_IN">OPERATES_IN (Brand -> Category)</option>
                   <option value="COMPETES_WITH">COMPETES_WITH (Product -> Product)</option>
                   <option value="SUBSTITUTE_FOR">SUBSTITUTE_FOR (Product -> Product)</option>
                   <option value="COMPLEMENTARY_TO">COMPLEMENTARY_TO (Product -> Product)</option>

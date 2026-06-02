@@ -257,6 +257,71 @@ async function runE2ETests() {
       console.log('  [SKIP] Companion "% Likely" badge (no companions mapped for soft drinks).');
     }
  
+    // 10. Conformance Check: Category Hierarchy Selection Browser Dynamic loading
+    console.log('\n9. Testing Category Hierarchy Explorer Selection Browser dynamic loading...');
+    console.log('--> Programmatically selecting the "Junior\'s Apparel" category in left panel tree...');
+    const juniorApparelFiltered = await page.evaluate(async () => {
+      const win = window as any;
+      if (typeof win.toggleCategoryFilter === 'function' && typeof win.state !== 'undefined') {
+        const cat = win.state.categories?.find((c: any) => c.name === "Junior's Apparel");
+        if (cat) {
+          console.log(`Selecting "Junior's Apparel" Category ID: ${cat.id}`);
+          await win.toggleCategoryFilter(cat.id, cat.name);
+          return true;
+        } else {
+          console.log("Could not find 'Junior's Apparel' category in state.categories!");
+        }
+      } else {
+        console.log("toggleCategoryFilter or state not globally defined!");
+      }
+      return false;
+    });
+
+    if (!juniorApparelFiltered) {
+      throw new Error('Failed to select "Junior\'s Apparel" category programmatically!');
+    }
+
+    // Wait a brief moment for dynamic query and rendering (gemini-loading-overlay should be hidden)
+    await page.waitForFunction(() => {
+      const overlay = document.getElementById('gemini-loading-overlay');
+      return !overlay || overlay.classList.contains('hide');
+    }, { timeout: 15000 });
+
+    const juniorState = await page.evaluate(() => {
+      const win = window as any;
+      return {
+        activeCategoryFilterId: win.state.activeCategoryFilterId,
+        nodesCount: win.state.allNodes?.length || 0,
+        nodeNames: win.state.allNodes?.map((n: any) => n.properties?.name || n.id) || []
+      };
+    });
+
+    console.log(`--> Junior's Apparel Active Category ID: ${juniorState.activeCategoryFilterId}`);
+    console.log(`--> Canvas Nodes loaded after category focus: ${juniorState.nodesCount} nodes`);
+    console.log(`--> Canvas Node Names: ${JSON.stringify(juniorState.nodeNames.slice(0, 5))}`);
+
+    if (juniorState.activeCategoryFilterId && juniorState.nodesCount > 0) {
+      console.log('  [PASS] "Junior\'s Apparel" ecosystem loaded and rendered on D3 canvas successfully!');
+    } else {
+      console.error('  [FAIL] "Junior\'s Apparel" failed to load nodes or set active filter!');
+      exitCode = 1;
+    }
+
+    // Clear category filter to restore original graph view
+    console.log('--> Programmatically clearing the category filter...');
+    await page.evaluate(async () => {
+      const win = window as any;
+      if (win.state.activeCategoryFilterId) {
+        await win.toggleCategoryFilter(win.state.activeCategoryFilterId, '');
+      }
+    });
+
+    // Wait a brief moment for graph restoration
+    await page.waitForFunction(() => {
+      const overlay = document.getElementById('gemini-loading-overlay');
+      return !overlay || overlay.classList.contains('hide');
+    }, { timeout: 15000 });
+
     if (exitCode === 0) {
       console.log('  [PASS] Competitors, substitutions, and complements rendered successfully inside the Inspector Panel with LIVE DATA and correct dynamic similarity badges.');
     }

@@ -5,22 +5,22 @@ export class ProductMapper {
   static toDetailDTO(rec: any): ProductDTO {
     if (!rec) throw new Error('Cannot map empty record');
     return {
-      id: rec.get('id'),
+      id: String(rec.get('id')),
       name: rec.get('name') || 'Unknown Product',
       price: rec.get('price') ? parseFloat(rec.get('price')) : 0.0,
       gtin: rec.get('gtin') || 'N/A',
       size: rec.get('size') ? parseFloat(rec.get('size')) : null,
       measure: rec.get('measure') || '',
       validationState: rec.get('validationState') || 'VALID',
-      brand: rec.get('brandId') ? { id: rec.get('brandId'), name: rec.get('brandName') } : null,
-      category: rec.get('categoryId') ? { id: rec.get('categoryId'), name: rec.get('categoryName') } : null
+      brand: rec.get('brandId') ? { id: String(rec.get('brandId')), name: rec.get('brandName') } : null,
+      category: rec.get('categoryId') ? { id: String(rec.get('categoryId')), name: rec.get('categoryName') } : null
     };
   }
 
   static toRelatedItemDTO(node: any, similarityVal?: number): RelatedItemDTO {
     const props = formatProperties(node.properties);
     const dto: RelatedItemDTO = {
-      id: props.id || node.identity.toString(),
+      id: props.id ? String(props.id) : String(node.identity),
       name: props.name || 'Unknown Product',
       price: props.price ? parseFloat(props.price) : 0.0,
       gtin: props.gtin || 'N/A',
@@ -38,7 +38,7 @@ export class ProductMapper {
     return {
       name: rec.get('name'),
       type: rec.get('type') || 'Unknown',
-      id: rec.get('id')
+      id: String(rec.get('id'))
     };
   }
 }

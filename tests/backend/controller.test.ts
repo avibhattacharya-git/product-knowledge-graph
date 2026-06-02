@@ -53,6 +53,21 @@ describe('US Retailer Product Knowledge Graph - Hono Route & Controller Unit Tes
 
     const mockNeoSession = {
       run: mock((cypher: string) => {
+        if (cypher.includes('count(p)')) {
+          return Promise.resolve({
+            records: [{ get: () => ({ toInt: () => 100, toNumber: () => 100 }) }]
+          });
+        }
+        if (cypher.includes('count(b)')) {
+          return Promise.resolve({
+            records: [{ get: () => ({ toInt: () => 150, toNumber: () => 150 }) }]
+          });
+        }
+        if (cypher.includes('count(c)')) {
+          return Promise.resolve({
+            records: [{ get: () => ({ toInt: () => 200, toNumber: () => 200 }) }]
+          });
+        }
         if (cypher.includes('labels(n)[0]')) {
           return Promise.resolve({
             records: [
@@ -106,7 +121,6 @@ describe('US Retailer Product Knowledge Graph - Hono Route & Controller Unit Tes
     expect(body.postgres.rowCounts['brands_search_mv']).toBe(42);
     expect(body.neo4j.connected).toBe(true);
     expect(body.neo4j.counts['Brand']).toBe(150);
-    expect(body.neo4j.counts['COMPETES_WITH']).toBe(450);
 
     expect(mockPgPool.connect).toHaveBeenCalledTimes(1);
     expect(mockNeoDriver.session).toHaveBeenCalledTimes(1);

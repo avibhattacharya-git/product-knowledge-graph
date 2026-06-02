@@ -26,7 +26,7 @@ export class BrandRepository {
     try {
       const result = await session.run(`
         MATCH (b:Brand {id: $id})-[:COMPETES_WITH]-(comp:Brand)
-        RETURN comp.id AS id, comp.name AS name
+        RETURN DISTINCT comp.id AS id, comp.name AS name
       `, { id: brandId });
       return result.records.map(rec => BrandMapper.toDTO(rec));
     } finally {
@@ -44,7 +44,7 @@ export class BrandRepository {
         WHERE toLower(b.name) CONTAINS toLower($term)
         WITH b LIMIT 1
         MATCH (b)-[:COMPETES_WITH]-(comp:Brand)
-        RETURN b.id AS matchedId, b.name AS matchedName, comp.id AS id, comp.name AS name
+        RETURN DISTINCT b.id AS matchedId, b.name AS matchedName, comp.id AS id, comp.name AS name
       `, { term });
       
       if (result.records.length === 0) {

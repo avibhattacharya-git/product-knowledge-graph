@@ -913,6 +913,36 @@ ${JSON.stringify(promptPayload, null, 2)}
   }
 
   // =========================================================================
+  // STAGE G: Brand-Category Operational Links Materializer
+  // =========================================================================
+
+  async ingestBrandCategoryRelationships(): Promise<{ relationships: number }> {
+    console.log('\n======================================================');
+    console.log('  STAGE G: MATERIALIZING BRAND-CATEGORY OPERATIONAL LINKS ');
+    console.log('======================================================\n');
+
+    const session = this.neoDriver.session({ defaultAccessMode: neo4j.session.WRITE });
+    const startTime = Date.now();
+
+    try {
+      const cypher = `
+        MATCH (b:Brand)<-[:MANUFACTURED_BY]-(p:Product)-[:BELONGS_TO]->(c:Category)
+        WITH b, c, count(p) AS count
+        MERGE (b)-[r:OPERATES_IN]->(c)
+        SET r.productCount = count
+        RETURN count(r) AS count
+      `;
+
+      const result = await session.run(cypher);
+      const count = result.records[0].get('count').toNumber();
+      console.log(`Successfully materialized ${count.toLocaleString()} (:Brand)-[:OPERATES_IN]->(:Category) links in ${Math.round((Date.now() - startTime) / 1000)}s.`);
+      return { relationships: count };
+    } finally {
+      await session.close();
+    }
+  }
+
+  // =========================================================================
   // BACKWARD-COMPATIBLE RUNNER
   // =========================================================================
 
@@ -933,6 +963,8 @@ ${JSON.stringify(promptPayload, null, 2)}
     
     const productStats = await this.streamProductCatalog({ appendOnly: false });
     
+    const brandCatRels = await this.ingestBrandCategoryRelationships();
+    
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
     return {
       products: productStats.products,
@@ -940,7 +972,7 @@ ${JSON.stringify(promptPayload, null, 2)}
       manufacturers: brandTopology.manufacturers,
       sources: 0,
       categories: catTopology.categories,
-      relationships: productStats.relationships + catTopology.parentLinksCount + brandTopology.ownedLinksCount + catRels.complements * 2 + catRels.substitutes * 2 + brandRels.competitors * 2,
+      relationships: productStats.relationships + catTopology.parentLinksCount + brandTopology.ownedLinksCount + catRels.complements * 2 + catRels.substitutes * 2 + brandRels.competitors * 2 + brandCatRels.relationships,
       durationSeconds
     };
   }

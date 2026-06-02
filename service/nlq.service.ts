@@ -69,6 +69,7 @@ Given the following database schema:
   - Relationships:
     - (Product)-[:MANUFACTURED_BY]->(Brand) (Brand owner)
     - (Product)-[:BELONGS_TO]->(Category) (Category taxonomy matching)
+    - (Brand)-[:OPERATES_IN]->(Category) (Brand operates in Category with exact product count)
     - (Brand)-[:COMPETES_WITH]->(Brand) (Brand-level overlapping competitive rivalry)
     - (Category)-[:SUBSTITUTE_CATEGORY]->(Category) (Fuzzy/vector mapped product substitutes)
     - (Category)-[:COMPLEMENTARY_TO]->(Category) (Ecosystem bundle accessory pairs)
@@ -103,6 +104,7 @@ Strict Translation Rules:
    - Brand-to-Brand: COMPETES_WITH.
    - Product-to-Brand: MANUFACTURED_BY.
    - Product-to-Category: BELONGS_TO.
+   - Brand-to-Category: OPERATES_IN.
 5. Untrustworthy Properties & Purity Guardrails (Critical): Do NOT filter or sort using the 'privateLabel' property on Brand nodes or the 'price' property on Product nodes. The 'privateLabel' indicator is untrustworthy, and 'price' data is questionable. If a user asks for 'cheap', 'premium', 'under $X', or 'budget' items, ignore those price/label filters. Instead, translate the request structurally, or filter semantically by brand/product names, or simply map the active Category tree nodes without using price or privateLabel properties.
 6. Return Format: Return the complete paths so they render visually: e.g., MATCH (p:Product)-[r1:BELONGS_TO]->(c:Category), (p)-[r2:MANUFACTURED_BY]->(b:Brand) RETURN p, r1, c, r2, b LIMIT 50. Always name your relationship variables (e.g., -[r:COMPETES_WITH]-> rather than -[:COMPETES_WITH]->) so that the visual DTO mapper has access to connection IDs.
 7. Valid JSON: Ensure the Cypher query and the explanation are properly escaped so that the JSON parser does not fail (e.g., escape double quotes in the Cypher query).
@@ -114,6 +116,9 @@ Strict Translation Rules:
 10. Flexible Multi-Entity Disjoint Mapping (CRITICAL FOR MULTI-CATEGORY QUESTIONS): When a user queries relationships or items spanning multiple distinct entities, brands, or categories (e.g., 'complements between Baking, Produce, and Meat'):
     - Do NOT force a strict, closed-loop intersection pattern (e.g., matching a closed triangle of COMPLEMENTARY_TO links between c1, c2, and c3). Doing so is extremely restrictive and will yield 0 results. Instead, use OPTIONAL MATCH statements for all relationship paths (e.g., MATCH (c1:Category) ... MATCH (c2:Category) ... OPTIONAL MATCH (c1)-[r1:COMPLEMENTARY_TO]-(c2)) so that the category nodes themselves are successfully matched and returned even if no relationship exists yet.
     - If a single category description contains multiple words representing alternative departments (e.g., 'Meat, Seafood, & Poultry'), do NOT combine them with AND on a single node name (e.g., c3.name CONTAINS 'meat' AND c3.name CONTAINS 'seafood' is impossible). ALWAYS join them with OR (e.g., toLower(c3.name) CONTAINS 'meat' OR toLower(c3.name) CONTAINS 'seafood' OR toLower(c3.name) CONTAINS 'poultry') to match any corresponding department.
+11. Brand-Category footprints: When the user asks which categories a brand sells in (or operates in), or which brands are active in a category, ALWAYS use the direct \`(Brand)-[:OPERATES_IN]->(Category)\` relationship instead of slow and noisy two-hop joins through Product. Always name the relationship variable (e.g. \`-[r:OPERATES_IN]->\`) so that D3 has access to connection IDs.
+    - Example (What categories does a brand operate in): MATCH (b:Brand) WHERE toLower(b.name) CONTAINS "purell" MATCH (b)-[r:OPERATES_IN]->(c:Category) RETURN b, r, c LIMIT 50
+    - Example (What brands operate in a category): MATCH (c:Category) WHERE toLower(c.name) CONTAINS "hand sanitizer" MATCH (b:Brand)-[r:OPERATES_IN]->(c) RETURN b, r, c LIMIT 50
 
 
 User Question: "${question}"
@@ -313,8 +318,7 @@ Output JSON:`;
 
           // C. Brand Node Enrichment:
           OPTIONAL MATCH (n)-[:OWNED_BY]->(brandOwner)
-          OPTIONAL MATCH (pGen:Product)-[:MANUFACTURED_BY]->(n)
-          OPTIONAL MATCH (pGen)-[:BELONGS_TO]->(bCat:Category)
+          OPTIONAL MATCH (n)-[:OPERATES_IN]->(bCat:Category)
           WITH n, b, bo, prodCategoryLineage, catParentLineage, brandOwner, collect(DISTINCT bCat.name) AS brandCategories
 
           RETURN id(n) AS internalId,

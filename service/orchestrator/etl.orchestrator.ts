@@ -156,6 +156,18 @@ export class EtlOrchestrator {
       }
     );
 
+    // Phase 8: Brand-Category Operational Links Materializer
+    const runBrandCatRels = options.relationships || (options.products && options.relationships !== false);
+    await executeStage(
+      'Stage G: Brand-Category Operational Links',
+      runBrandCatRels,
+      async () => {
+        const res = await this.etlService.ingestBrandCategoryRelationships();
+        relationships += res.relationships;
+        return `Materialized ${res.relationships.toLocaleString()} OPERATES_IN links`;
+      }
+    );
+
     const totalDurationSeconds = Math.round((Date.now() - startTime) / 1000);
 
     // Render a gorgeous, robust ASCII telemetry table
