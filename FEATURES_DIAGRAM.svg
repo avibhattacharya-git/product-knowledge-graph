@@ -1,0 +1,244 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 850" width="100%" height="100%" style="background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+    <linearGradient id="pinkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ec4899" />
+      <stop offset="100%" stop-color="#db2777" />
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="100%" stop-color="#ea580c" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="yellowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eab308" />
+      <stop offset="100%" stop-color="#ca8a04" />
+    </linearGradient>
+    
+    <!-- Shadow Filter -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+
+    <!-- Arrow Markers -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#64748b" />
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#a855f7" />
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0ea5e9" />
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#10b981" />
+    </marker>
+  </defs>
+
+  <!-- Title Panel -->
+  <g transform="translate(40, 40)">
+    <text x="0" y="0" font-size="24" font-weight="bold" fill="#f8fafc" letter-spacing="0.5">Application Feature Pipelines</text>
+    <text x="0" y="24" font-size="14" fill="#94a3b8">Handoff Map of REST Endpoints, Services, and Repositories</text>
+  </g>
+
+  <!-- ================= LEFT PANEL: HIGH-LEVEL RUNDOWN ================= -->
+  <rect x="30" y="100" width="460" height="710" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="2" />
+  <text x="50" y="135" font-size="16" font-weight="bold" fill="#38bdf8">High-Level Feature Registry</text>
+
+  <!-- Feature 1 -->
+  <g transform="translate(50, 160)">
+    <rect x="0" y="0" width="420" height="75" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" />
+    <rect x="10" y="10" width="80" height="20" rx="3" fill="#ec4899" />
+    <text x="50" y="24" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">UI CLIENT</text>
+    <text x="100" y="24" font-size="12" font-weight="bold" fill="#f8fafc">1. Interactive Knowledge Graph</text>
+    <text x="15" y="48" font-size="11" fill="#94a3b8">Renders D3.js force-directed canvas. Ad-hoc Cypher console.</text>
+    <text x="15" y="62" font-size="10" fill="#cbd5e1" font-family="monospace">GET /api/graph | POST /api/query</text>
+  </g>
+
+  <!-- Feature 2 -->
+  <g transform="translate(50, 250)">
+    <rect x="0" y="0" width="420" height="75" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" />
+    <rect x="10" y="10" width="80" height="20" rx="3" fill="#a855f7" />
+    <text x="50" y="24" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">AI / COGNITIVE</text>
+    <text x="100" y="24" font-size="12" font-weight="bold" fill="#f8fafc">2. AI Copilot Chat &amp; NLQ Translate</text>
+    <text x="15" y="48" font-size="11" fill="#94a3b8">Natural Language Search translates input to active Cypher.</text>
+    <text x="15" y="62" font-size="10" fill="#cbd5e1" font-family="monospace">POST /api/chat | POST /api/nlq</text>
+  </g>
+
+  <!-- Feature 3 -->
+  <g transform="translate(50, 340)">
+    <rect x="0" y="0" width="420" height="75" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" />
+    <rect x="10" y="10" width="80" height="20" rx="3" fill="#0ea5e9" />
+    <text x="50" y="24" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">SEARCH</text>
+    <text x="100" y="24" font-size="12" font-weight="bold" fill="#f8fafc">3. Global Search &amp; Autocomplete</text>
+    <text x="15" y="48" font-size="11" fill="#94a3b8">Instant parallel UNION searches across Brands, Categories.</text>
+    <text x="15" y="62" font-size="10" fill="#cbd5e1" font-family="monospace">GET /api/search | GET /api/autocomplete</text>
+  </g>
+
+  <!-- Feature 4 -->
+  <g transform="translate(50, 430)">
+    <rect x="0" y="0" width="420" height="75" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" />
+    <rect x="10" y="10" width="80" height="20" rx="3" fill="#10b981" />
+    <text x="50" y="24" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">METRICS</text>
+    <text x="100" y="24" font-size="12" font-weight="bold" fill="#f8fafc">4. Topological Recommendation Engine</text>
+    <text x="15" y="48" font-size="11" fill="#94a3b8">Computes Jaccard catalog brand overlaps. Suggests edges.</text>
+    <text x="15" y="62" font-size="10" fill="#cbd5e1" font-family="monospace">GET /api/recommendations (brands / categories)</text>
+  </g>
+
+  <!-- Feature 5 -->
+  <g transform="translate(50, 520)">
+    <rect x="0" y="0" width="420" height="75" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" />
+    <rect x="10" y="10" width="80" height="20" rx="3" fill="#f59e0b" />
+    <text x="50" y="24" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">REST ACTIONS</text>
+    <text x="100" y="24" font-size="12" font-weight="bold" fill="#f8fafc">5. Dual-Write Selections Accept</text>
+    <text x="15" y="48" font-size="11" fill="#94a3b8">Writes approved relations to Neo4j AND Postgres cache.</text>
+    <text x="15" y="62" font-size="10" fill="#cbd5e1" font-family="monospace">POST /api/recommendations/accept</text>
+  </g>
+
+  <!-- Feature 6 -->
+  <g transform="translate(50, 610)">
+    <rect x="0" y="0" width="420" height="75" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" />
+    <rect x="10" y="10" width="80" height="20" rx="3" fill="#64748b" />
+    <text x="50" y="24" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">RECOMMENDS</text>
+    <text x="100" y="24" font-size="12" font-weight="bold" fill="#f8fafc">6. Multi-Tiered Product Traversals</text>
+    <text x="15" y="48" font-size="11" fill="#94a3b8">Cypher queries isolating Rivals, Accessories, &amp; Siblings.</text>
+    <text x="15" y="62" font-size="10" fill="#cbd5e1" font-family="monospace">GET /api/products/:id/related</text>
+  </g>
+
+  <g transform="translate(50, 700)">
+    <rect x="0" y="0" width="420" height="90" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" />
+    <rect x="10" y="10" width="80" height="20" rx="3" fill="#3b82f6" />
+    <text x="50" y="24" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">MAINTAIN</text>
+    <text x="100" y="24" font-size="12" font-weight="bold" fill="#f8fafc">7. Live Status Connectivity Meter</text>
+    <text x="15" y="48" font-size="11" fill="#94a3b8">Diagnostic status check mapping connection states, row views,</text>
+    <text x="15" y="62" font-size="11" fill="#94a3b8">counts from Postgres and Neo4j.</text>
+    <text x="15" y="78" font-size="10" fill="#cbd5e1" font-family="monospace">GET /api/db-status</text>
+  </g>
+
+
+  <!-- ================= RIGHT PANEL: DETAILED REQUEST PIPELINE ================= -->
+  <rect x="520" y="100" width="650" height="710" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="2" />
+  <text x="540" y="135" font-size="16" font-weight="bold" fill="#10b981">Detailed Execution Pipeline (Request Flow)</text>
+
+  <!-- Route Block -->
+  <g transform="translate(730, 160)" filter="url(#shadow)">
+    <rect x="0" y="0" width="220" height="45" rx="5" fill="#1e293b" stroke="#475569" stroke-width="1.5" />
+    <text x="110" y="18" font-size="11" font-weight="bold" fill="#94a3b8" text-anchor="middle">ROUTER LAYER</text>
+    <text x="110" y="34" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">presentation/routes/api.routes.ts</text>
+  </g>
+  <path d="M 840 205 L 840 235" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Controller Block -->
+  <g transform="translate(730, 235)" filter="url(#shadow)">
+    <rect x="0" y="0" width="220" height="50" rx="5" fill="url(#orangeGrad)" />
+    <text x="110" y="20" font-size="11" font-weight="bold" fill="#ffedd5" text-anchor="middle">CONTROLLER</text>
+    <text x="110" y="38" font-size="13" font-weight="bold" fill="#ffffff" text-anchor="middle">ApiController</text>
+  </g>
+  <path d="M 840 285 L 840 315" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Orchestrator Block -->
+  <g transform="translate(730, 315)" filter="url(#shadow)">
+    <rect x="0" y="0" width="220" height="50" rx="5" fill="url(#blueGrad)" />
+    <text x="110" y="20" font-size="11" font-weight="bold" fill="#e0f2fe" text-anchor="middle">ORCHESTRATOR</text>
+    <text x="110" y="38" font-size="13" font-weight="bold" fill="#ffffff" text-anchor="middle">SearchOrchestrator</text>
+  </g>
+
+  <!-- Branch lines from Orchestrator to Services -->
+  <!-- Line Left (NLQ Flow) -->
+  <path d="M 730 340 C 620 340, 620 395, 620 405" fill="none" stroke="#a855f7" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arrow-purple)" />
+  <!-- Line Center (Related/Search Flow) -->
+  <path d="M 840 365 L 840 405" fill="none" stroke="#0ea5e9" stroke-width="2" marker-end="url(#arrow-blue)" />
+  <!-- Line Right (Recommendation Flow) -->
+  <path d="M 950 340 C 1060 340, 1060 395, 1060 405" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arrow-green)" />
+
+  <!-- Services Box Left (Chat / NLQ Services) -->
+  <g transform="translate(540, 405)" filter="url(#shadow)">
+    <rect x="0" y="0" width="160" height="75" rx="5" fill="#2e1065" stroke="#7c3aed" stroke-width="1.5" />
+    <text x="80" y="20" font-size="10" font-weight="bold" fill="#d8b4fe" text-anchor="middle">SERVICES (AI)</text>
+    <text x="80" y="38" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">NlqService</text>
+    <text x="80" y="56" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">ChatService</text>
+  </g>
+
+  <!-- Services Box Center (Entity Services) -->
+  <g transform="translate(760, 405)" filter="url(#shadow)">
+    <rect x="0" y="0" width="160" height="75" rx="5" fill="#0c4a6e" stroke="#0284c7" stroke-width="1.5" />
+    <text x="80" y="20" font-size="10" font-weight="bold" fill="#bae6fd" text-anchor="middle">SERVICES (CORE)</text>
+    <text x="80" y="38" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">ProductService</text>
+    <text x="80" y="56" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">BrandService</text>
+  </g>
+
+  <!-- Services Box Right (Recommendation Service) -->
+  <g transform="translate(980, 405)" filter="url(#shadow)">
+    <rect x="0" y="0" width="160" height="75" rx="5" fill="#064e3b" stroke="#059669" stroke-width="1.5" />
+    <text x="80" y="20" font-size="10" font-weight="bold" fill="#a7f3d0" text-anchor="middle">SERVICES (RECS)</text>
+    <text x="80" y="46" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">Recommendation</text>
+    <text x="80" y="62" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">Service</text>
+  </g>
+
+  <!-- A-1 Link Left to LLM wrapper -->
+  <path d="M 620 480 L 620 540" fill="none" stroke="#a855f7" stroke-width="2" marker-end="url(#arrow-purple)" />
+  <!-- LLM service -->
+  <g transform="translate(540, 540)" filter="url(#shadow)">
+    <rect x="0" y="0" width="160" height="50" rx="5" fill="#4c1d95" stroke="#7c3aed" stroke-width="1" />
+    <text x="80" y="20" font-size="10" font-weight="bold" fill="#d8b4fe" text-anchor="middle">LLM PROVIDERS</text>
+    <text x="80" y="38" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">LlmService</text>
+  </g>
+
+  <!-- Links from Core Services and Recs to Repositories -->
+  <path d="M 840 480 L 840 540" fill="none" stroke="#0ea5e9" stroke-width="2" marker-end="url(#arrow-blue)" />
+  <path d="M 1060 480 C 1060 515, 960 515, 930 540" fill="none" stroke="#10b981" stroke-width="2" marker-end="url(#arrow-green)" />
+
+  <!-- Repository Layer Box (Product, Brand, Category, Graph repos) -->
+  <g transform="translate(730, 540)" filter="url(#shadow)">
+    <rect x="0" y="0" width="220" height="95" rx="5" fill="#1e293b" stroke="#475569" stroke-width="1.5" />
+    <text x="110" y="18" font-size="10" font-weight="bold" fill="#94a3b8" text-anchor="middle">REPOSITORY LAYER</text>
+    <text x="110" y="36" font-size="11" fill="#cbd5e1" text-anchor="middle">ProductRepository (fetchRelated)</text>
+    <text x="110" y="52" fill="#cbd5e1" font-size="11" text-anchor="middle">BrandRepository / CategoryRepository</text>
+    <text x="110" y="68" fill="#cbd5e1" font-size="11" text-anchor="middle">GraphRepository</text>
+    <text x="110" y="84" font-size="10" fill="#64748b" text-anchor="middle">repository/mappers/*</text>
+  </g>
+
+  <!-- Connect Repositories/LLMs to Database Engines -->
+  <!-- LLM calls external API -->
+  <path d="M 620 590 L 620 670" fill="none" stroke="#a855f7" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arrow)" />
+  <g transform="translate(540, 670)">
+    <rect x="0" y="0" width="160" height="35" rx="15" fill="#2e1065" stroke="#7c3aed" stroke-width="1" />
+    <text x="80" y="22" font-size="11" font-weight="bold" fill="#f3e8ff" text-anchor="middle">Gemini API</text>
+  </g>
+
+  <!-- Repositories call databases -->
+  <path d="M 800 635 C 800 660, 750 665, 750 680" fill="none" stroke="#0ea5e9" stroke-width="2" marker-end="url(#arrow-blue)" />
+  <path d="M 880 635 C 880 660, 930 665, 930 680" fill="none" stroke="#10b981" stroke-width="2" marker-end="url(#arrow-green)" />
+
+  <!-- Database Cylinders -->
+  <!-- PostgreSQL -->
+  <g transform="translate(680, 680)" filter="url(#shadow)">
+    <path d="M 0 10 A 60 10 0 0 1 120 10 L 120 50 A 60 10 0 0 1 0 50 Z" fill="url(#blueGrad)" />
+    <ellipse cx="60" cy="10" rx="60" ry="10" fill="#38bdf8" />
+    <text x="60" y="34" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">PostgreSQL</text>
+    <text x="60" y="46" font-size="8" fill="#e0f2fe" text-anchor="middle">(ProductDataProd)</text>
+  </g>
+
+  <!-- Neo4j -->
+  <g transform="translate(870, 680)" filter="url(#shadow)">
+    <path d="M 0 10 A 60 10 0 0 1 120 10 L 120 50 A 60 10 0 0 1 0 50 Z" fill="url(#greenGrad)" />
+    <ellipse cx="60" cy="10" rx="60" ry="10" fill="#34d399" />
+    <text x="60" y="34" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">Neo4j Graph</text>
+    <text x="60" y="46" font-size="8" fill="#ecfdf5" text-anchor="middle">(bolt://localhost)</text>
+  </g>
+
+  <!-- Dual-Write visual loop showing Recommendation Service directly linking to PostgreSQL and Neo4j -->
+  <path d="M 1060 480 C 1060 670, 830 670, 810 680" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arrow)" />
+  <text x="1005" y="660" font-size="10" fill="#f59e0b" text-anchor="middle">Dual-Write cache sync</text>
+</svg>
